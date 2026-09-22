@@ -12,9 +12,9 @@ Flutter 音乐播放器，支持 **Android / iOS / Windows 桌面**。**免登�
 
 | 发布 | 内容 |
 |---|---|
-| 安卓 APK(最新) | arm64 安装包 |
+| 安卓 APK(最新) | 两个包:`YunYunMusic-arm64.apk`(真机手机用)、`YunYunMusic-universal.apk`(云手机 / 模拟器用,含 x86_64 与 32 位) |
 | Windows 桌面版(最新) | 免安装 zip(music_app.exe + dll + data) |
-| iOS 未签名 ipa(最新) | 未签名 ipa,需用 Sideloadly / AltStore 借自己的 Apple ID 自签后安装 |
+| iOS 未签名 ipa(最新) | 未签名 ipa;云真机 / 云测平台可直接上传由平台重签,自己的手机则用 Sideloadly / AltStore 自签 |
 
 > 每次在 Actions 里手动跑对应工作流,这几条发布会自动覆盖更新。
 > 私有仓库需要登录 GitHub 才能下载。

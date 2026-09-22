@@ -65,12 +65,17 @@ jobs:
       - name: 装依赖
         run: flutter pub get
 
-      - name: 编译 APK(arm64,与本地打包一致)
+      - name: 编译 APK(arm64,手机用)
         run: flutter build apk --release --target-platform android-arm64 --dart-define=API_BASE_URL="$API_BASE_URL"
 
-      - name: 按版本号改名
+      - name: 保存 arm64 包
+        run: cp build/app/outputs/flutter-apk/app-release.apk "YunYunMusic-v${APP_VER}-arm64.apk"
+
+      - name: 编译通用 APK(arm64 + armeabi-v7a + x86_64,云手机/模拟器用)
+        # 云手机、安卓模拟器常是 x86_64 或 32 位,只装 arm64 包会「解析包错误 / 闪退」
         run: |
-          cp build/app/outputs/flutter-apk/app-release.apk "YunYunMusic-v${APP_VER}-arm64.apk"
+          flutter build apk --release --dart-define=API_BASE_URL="$API_BASE_URL"
+          cp build/app/outputs/flutter-apk/app-release.apk "YunYunMusic-v${APP_VER}-universal.apk"
           ls -lh YunYunMusic-*.apk
 
       - name: 上传产物(Artifacts,30 天)
@@ -81,7 +86,9 @@ jobs:
           retention-days: 30
 
       - name: 复制一份固定文件名的包(给 Releases 直链用)
-        run: cp "YunYunMusic-v${APP_VER}-arm64.apk" YunYunMusic-arm64.apk
+        run: |
+          cp "YunYunMusic-v${APP_VER}-arm64.apk" YunYunMusic-arm64.apk
+          cp "YunYunMusic-v${APP_VER}-universal.apk" YunYunMusic-universal.apk
 
       - name: 发布到 Releases(固定下载直链)
         uses: softprops/action-gh-release@v2
@@ -96,7 +103,13 @@ jobs:
 
             装之前注意:CI 的调试签名与本机不同,覆盖安装若提示「应用未安装」,先卸载旧版;
             或在仓库 secret 里配置 DEBUG_KEYSTORE_BASE64 让两边签名一致。
-          files: YunYunMusic-arm64.apk
+
+            两个包的区别:
+            - YunYunMusic-arm64.apk     真机手机用(体积小)
+            - YunYunMusic-universal.apk 云手机 / 模拟器用(含 x86_64 与 32 位)
+          files: |
+            YunYunMusic-arm64.apk
+            YunYunMusic-universal.apk
           # 重复运行时覆盖同名资产(否则第二次会报 already exists)
           overwrite_files: true
         env:

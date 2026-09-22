@@ -39,6 +39,11 @@ android/key.properties
 .cxx/
 
 # ---------- iOS ----------
+# 本工程 iOS 插件全部是 Swift Package(SPM),不需要 CocoaPods。
+# 之前手工加的 Podfile 会让 Xcode 报「sandbox is not in sync with Podfile.lock」,
+# 已删除并在此忽略,防止它被重新提交。
+ios/Podfile
+ios/Podfile.lock
 ios/Pods/
 ios/.symlinks/
 ios/Flutter/Generated.xcconfig
