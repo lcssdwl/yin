@@ -1,21 +1,75 @@
+import 'dart:io';
+
+import 'package:flutter/services.dart';
+
 /// 后端接口配置
 ///
-/// baseUrl 说明:
-///  - 外网测试(devtunnel)     → https://nvh7g6dz-8000.asse.devtunnels.ms
-///  - 真机 / 局域网            → http://192.168.x.x:8000 (改成你电脑的局域网 IP)
-///  - Android 模拟器访问宿主机  → http://10.0.2.2:8000
-///  - 运行时覆盖              → flutter run --dart-define=API_BASE_URL=https://xxx.devtunnels.ms
+/// baseUrl 现在不再写死,而是**运行时从 url.txt 读取**(见 [ApiConfig.loadBaseUrl]):
+///  - Android : 读打包进 assets 的 assets/url.txt
+///  - Windows : 读 exe 同目录的 url.txt(外网隧道随时改、不用重打包)
+///  - 其它平台 / 文件缺失 / 读取失败 → 退回下面的 _defaultBaseUrl
 ///
-/// 注意:devtunnel 地址每次重新开隧道都会变,换了记得同步改这里并重新打包。
+/// 仍保留开发期覆盖:flutter run --dart-define=API_BASE_URL=https://xxx.devtunnels.ms
+/// (dart-define 优先级最高,会跳过 url.txt)
 class ApiConfig {
   ApiConfig._();
 
-  static const String baseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://10.126.126.10:8000',
-  );
+  /// 编译期 dart-define 覆盖(优先级最高,开发期联调用)
+  static const String _envBaseUrl =
+      String.fromEnvironment('API_BASE_URL', defaultValue: '');
+
+  /// 兜底默认后端地址(局域网 / 本机)
+  static const String _defaultBaseUrl = 'http://10.126.126.10:8000';
+
+  /// 运行时实际生效的后端地址,由 [loadBaseUrl] 在启动时填充。
+  /// 不再是编译期常量:Android 读 assets/url.txt,Windows 读本地 url.txt。
+  static String baseUrl = _defaultBaseUrl;
 
   static const String apiPrefix = '/api/v1';
+
+  /// 启动时按平台加载后端地址,**必须在 DioClient.init() 之前调用**。
+  ///
+  ///  - Android: 读 assets/url.txt(已用 pubspec 的 assets 注册)
+  ///  - Windows: 读 exe 同目录的 url.txt,方便外网隧道换地址时直接改文件、无需重打包
+  ///  - 其它平台 / 文件缺失 / 读取异常 → 退回 _defaultBaseUrl
+  static Future<void> loadBaseUrl() async {
+    // 1) dart-define 优先级最高,开发期联调时仍可用
+    if (_envBaseUrl.isNotEmpty) {
+      baseUrl = _envBaseUrl;
+      print('[api] baseUrl 来自 dart-define: $baseUrl');
+      return;
+    }
+
+    // 2) 按平台从 url.txt 读取
+    String? fromFile;
+    if (Platform.isAndroid) {
+      try {
+        fromFile = (await rootBundle.loadString('assets/url.txt')).trim();
+      } catch (e) {
+        print('[api] 读取 assets/url.txt 失败: $e');
+      }
+    } else if (Platform.isWindows) {
+      try {
+        final dir = File(Platform.resolvedExecutable).parent.path;
+        final file = File('$dir${Platform.pathSeparator}url.txt');
+        if (await file.exists()) {
+          fromFile = (await file.readAsString()).trim();
+        } else {
+          print('[api] 未找到 url.txt(将用默认值): $dir');
+        }
+      } catch (e) {
+        print('[api] 读取本地 url.txt 失败: $e');
+      }
+    }
+
+    if (fromFile != null && fromFile.isNotEmpty) {
+      baseUrl = fromFile;
+      print('[api] baseUrl 来自 url.txt: $baseUrl');
+    } else {
+      baseUrl = _defaultBaseUrl;
+      print('[api] baseUrl 使用默认值: $baseUrl');
+    }
+  }
 
   static const Duration connectTimeout = Duration(seconds: 15);
   static const Duration receiveTimeout = Duration(seconds: 20);

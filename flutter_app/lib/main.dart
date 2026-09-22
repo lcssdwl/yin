@@ -5,6 +5,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'config/api_config.dart';
 import 'config/constants.dart';
 import 'config/theme.dart';
 import 'core/audio/audio_cache.dart';
@@ -42,7 +43,8 @@ Future<void> main() async {
     print('BOOT: storage failed');
   }
 
-  // 网络层
+  // 网络层:先按平台加载后端地址(url.txt),再初始化 dio
+  await ApiConfig.loadBaseUrl();
   DioClient.instance.init();
   print('BOOT: dio ok');
 
