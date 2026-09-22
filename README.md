@@ -8,9 +8,7 @@ Flutter 音乐播放器，支持 **Android / iOS / Windows 桌面**。**免登�
 
 ## 下载
 
-编译好的安装包统一在 **Releases** 页面下载:
-
-<https://github.com/LCS6-SDWL/yin/releases>
+编译好的安装包统一在 **[Releases](/LCS6-SDWL/yin/releases)** 页面下载。
 
 | 发布 | 内容 |
 |---|---|
