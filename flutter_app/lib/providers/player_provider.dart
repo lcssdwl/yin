@@ -43,6 +43,13 @@ class PlayerProvider extends ChangeNotifier {
   /// 用代号把过期结果整段丢弃(不回写、不载入、不复位状态)。
   int _playToken = 0;
 
+  /// 「应该正在播放」的意图标记
+  ///
+  /// [PlayerProvider._confirmPlayingOnWindows] 会补发 play() 来修 Windows 的
+  /// 换源竞态;若用户在这期间点了暂停,补发就会把音乐又拉起来 —— 所以补发前
+  /// 必须先看这个意图标记。
+  bool _wantPlaying = false;
+
   /// 当前这首已经上报过的播放秒数(只报增量,避免同一段重复累计)
   int _reportedSec = 0;
 
@@ -434,6 +441,7 @@ class PlayerProvider extends ChangeNotifier {
     _reportedSec = 0; // 换歌:听歌秒数从头计
     _loading = true;
     _switching = true;
+    _wantPlaying = true; // 用户点的是播放/切歌,意图就是要它响
     _needLogin = false; // 新一轮播放,清除上一次的「需登录」标记
     _qualityLoginHint = null;
     _qualityNotice = null; // 音质回退提示同样只反映当前这一轮
@@ -488,7 +496,7 @@ class PlayerProvider extends ChangeNotifier {
 
       // 不等 play() 返回 —— 它的 Future 可能卡在 audio focus 上,
       // 一旦卡住,下面 switching=false 永远执行不到 → 播放按钮一直转圈。
-      unawaited(_playAsync());
+      unawaited(_playAsync(token));
 
       _loading = false;
       _switchGuard?.cancel();
@@ -629,12 +637,117 @@ class PlayerProvider extends ChangeNotifier {
     return fresh;
   }
 
+  /// 这个平台在换源后需要先对齐状态才能起播(目前只有 Windows)
+  bool get _needAlignBeforePlay =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
+  /// 真正把「播放」下发出去
+  ///
+  /// Windows 上必须先对齐:just_audio 核心的 `play()` 第一行就是
+  /// `if (playing) return;` —— 核心以为在播时它直接返回、一个字节都不发给平台。
+  /// 而 WMF 换源后其实是暂停态,不先 pause 一下把两边拉平,这次 play() 就是空转
+  /// (表现:「点了没反应/被按成暂停」)。
+  ///
+  /// 换源路径已经在 loadSong 里对齐过一次;这里再兜一次,覆盖 toggle / 重播等
+  /// 不经过 loadSong 的入口。
+  Future<void> _playNow() async {
+    // 装载中不抢跑:此刻下发 play 请求,WMF 很可能紧接着被「换源」重置回暂停,
+    // 白费一次;而且会让核心的 playing 提前变成 true,后面那次 play() 反而空转。
+    // 交给「载入完成后」的那次 _playAsync 就行(它一定会执行)。
+    if (_handler.player.processingState == ProcessingState.loading) {
+      debugPrint('[player] 正在装载,稍后由载入完成的那次起播');
+      return;
+    }
+
+    if (_needAlignBeforePlay && _handler.player.playing) {
+      try {
+        await _handler.pause();
+        debugPrint('[player] Windows 起播前对齐:先 pause 再 play');
+      } catch (e) {
+        debugPrint('[player] 起播前 pause 失败(继续尝试 play): $e');
+      }
+    }
+    await _handler.play();
+  }
+
   /// 异步触发播放(不阻塞切歌流程,异常单独吞掉)
-  Future<void> _playAsync() async {
+  ///
+  /// [token] 本次切歌的代号:起播确认期间若又切了歌,就交回新的一次,不再插手。
+  Future<void> _playAsync(int token) async {
     try {
-      await _handler.play();
+      await _playNow();
     } catch (e) {
       debugPrint('[player] play error: $e');
+      return;
+    }
+    unawaited(_confirmPlayingOnWindows(token));
+  }
+
+  /// Windows 起播确认(其它平台直接跳过)
+  ///
+  /// 为什么需要这一手:
+  ///   Windows 端 just_audio 走的是 WinRT MediaPlayer(WMF)。WMF 的 `Source`
+  ///   属性一旦被赋值(WMF 侧就是「换源 / 载入下一首」),播放器会**立即回到暂停态**;
+  ///   而 just_audio 核心的 `play()` 第一行是 `if (playing) return;` ——
+  ///   切歌那一刻核心还以为「在播」(它只认 pause/平台事件),于是这句 play()
+  ///   直接返回,压根不向平台下发播放请求。等 WMF 的暂停事件传回 Dart 侧,
+  ///   界面就停在暂停态了。
+  ///   表现:「点下一首 / 上一首,转圈结束后不播,得再点一次播放按钮」。
+  ///
+  ///   Android 的 ExoPlayer 有 playWhenReady 语义(换源后自动续播),没这个问题,
+  ///   所以只在 Windows 上补,免得动了手机端正常的续播行为。
+  Future<void> _confirmPlayingOnWindows(int token) async {
+    if (defaultTargetPlatform != TargetPlatform.windows) return;
+
+    final p = _handler.player;
+    var lastPos = p.position;
+
+    for (var i = 0; i < 20; i++) {
+      await Future.delayed(const Duration(milliseconds: 120));
+
+      if (!_wantPlaying) return; // 用户已经暂停,别再把它拉起来
+      if (token != _playToken) return; // 已经切到别的歌了
+
+      final state = p.processingState;
+      if (state == ProcessingState.completed) return; // 已经放完,不是「没起播」
+
+      final pos = p.position;
+      if (p.playing && pos != lastPos) return; // 位置在走 = 真的在出声,收工
+      lastPos = pos;
+
+      // 平台已经回到暂停态:此刻 play() 才会真的下发播放请求。
+      // 补发后继续下一轮,确认是不是真起来了。
+      if (!p.playing) {
+        debugPrint('[player] Windows 起播确认($i):补发 play() '
+            '#${currentSong?.id} state=$state');
+        try {
+          await _playNow(); // 内含「必要时先 pause 对齐」
+        } catch (e) {
+          debugPrint('[player] 补发 play 失败: $e');
+        }
+        continue;
+      }
+
+      // 还在装载/缓冲:位置本来就不走,继续等。
+      // 这里**不要** pause —— 那会把正在进行的缓冲打断,反而更容易卡住。
+      if (state == ProcessingState.loading ||
+          state == ProcessingState.buffering) {
+        continue;
+      }
+
+      // 核心说「在播」、状态也不是装载,但位置一动不动 —— 就是那个竞态(假在播)。
+      // 给它约半秒;之后 pause+play 强制下发一次。
+      if (i >= 4) {
+        debugPrint('[player] Windows 疑似「假在播」→ 强制重新起播 '
+            '#${currentSong?.id}');
+        try {
+          await _handler.pause();
+          await _playNow();
+        } catch (e) {
+          debugPrint('[player] 强制起播失败: $e');
+        }
+        return;
+      }
     }
   }
 
@@ -837,9 +950,13 @@ class PlayerProvider extends ChangeNotifier {
     if (currentSong == null) return;
     if (_handler.player.playing) {
       await flushListen(); // 暂停前先把这段听歌时间记上
+      _wantPlaying = false;
       await _handler.pause();
     } else {
-      await _handler.play();
+      // 走 _playAsync:Windows 上会先对齐状态再下发播放请求,并做一次起播确认;
+      // 直接 await _handler.play() 会踩到「核心以为在播 → 空转」那个坑。
+      _wantPlaying = true;
+      unawaited(_playAsync(_playToken));
     }
     notifyListeners();
   }
@@ -967,6 +1084,7 @@ class PlayerProvider extends ChangeNotifier {
     _sleepTimer?.cancel();
     _sleepTimer = null;
     _sleepSecondsLeft = 0;
+    _wantPlaying = false;
     _handler.pause();
     notifyListeners();
   }
@@ -1021,6 +1139,7 @@ class PlayerProvider extends ChangeNotifier {
     // 定时关闭:本首歌结束后停止
     if (_sleepEndOfSong) {
       _sleepEndOfSong = false;
+      _wantPlaying = false;
       _handler.pause();
       notifyListeners();
       return;
@@ -1035,6 +1154,7 @@ class PlayerProvider extends ChangeNotifier {
         _queue.isNotEmpty &&
         _currentIndex >= _queue.length - 1) {
       debugPrint('[player] sequence finished → pause');
+      _wantPlaying = false;
       _handler.pause();
       notifyListeners();
       return;
@@ -1060,6 +1180,7 @@ class PlayerProvider extends ChangeNotifier {
 
     // 重播会把进度归零,已上报值也要跟着归零,否则新的一轮会被算成 0 秒
     _reportedSec = 0;
+    _wantPlaying = true; // 重播的意图就是要响(Windows 起播确认会用到)
 
     if (_currentIndex >= 0 && _currentIndex < _queue.length) {
       _queue[_currentIndex] = fresh;
@@ -1075,14 +1196,16 @@ class PlayerProvider extends ChangeNotifier {
         debugPrint('[player] replay: seek 0');
         await _handler.seek(Duration.zero);
       }
-      await _handler.play();
+      await _playNow();
       debugPrint('[player] replay: play() called, playing=${_handler.player.playing}');
+      // 换了源(WMF 会回到暂停态)时同样要确认真的起播了
+      unawaited(_confirmPlayingOnWindows(token));
     } catch (e) {
       debugPrint('[player] replay FAILED: $e');
       // 二次兜底:尽量恢复播放
       try {
         await _handler.seek(Duration.zero);
-        await _handler.play();
+        await _playNow();
       } catch (_) {
         // 确实无法播放时静默处理,避免影响后续操作
       }
@@ -1115,6 +1238,7 @@ class PlayerProvider extends ChangeNotifier {
     //   - 不自动跳下一首(否则单曲循环会被莫名跳歌)
     // 用户看到播放按钮回到「播放」态,自己决定切歌或换音质即可。
     _consecutiveErrors = 0;
+    _wantPlaying = false;
     debugPrint('[player] give up on #${song?.id}: pause and stay');
 
     try {

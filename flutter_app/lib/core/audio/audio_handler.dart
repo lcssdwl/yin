@@ -98,6 +98,10 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     debugPrint('[audio] loadSong #${song.id} 「${song.name}」');
     mediaItem.add(_toMediaItem(song));
 
+    // ★ Windows 必须先对齐播放状态再换源(见 _alignBeforeLoad 的说明)。
+    //   顺序很重要:先 pause(把两边拉平)→ 再 setUrl/setFilePath。
+    await _alignBeforeLoad();
+
     final source = song.playUrl;
 
     try {
@@ -132,6 +136,30 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     } catch (e) {
       debugPrint('[audio] loadSong ERROR: $e');
       rethrow;
+    }
+  }
+
+  /// Windows:换源前把播放状态对齐(其它平台什么都不做)
+  ///
+  /// 为什么必须做:
+  ///   Windows 端 just_audio 走 WinRT MediaPlayer(WMF)。给 `MediaPlayer.Source`
+  ///   赋值(= 换源)会让 WMF **立刻回到暂停态**并回报 `playing=false`;
+  ///   而 just_audio 核心的 `playing` 这时还是 true(它只认 pause/平台事件)。
+  ///   于是换源后会有一个「核心说在播、WMF 没出声」的窗口 —— 界面显示暂停图标
+  ///   但没有声音,用户此时点播放按钮,toggle() 看到 `playing==true` 就当成
+  ///   「要暂停」,真的把它按停了:表现就是「点播放反而变暂停,再点一次才响」。
+  ///
+  ///   在换源**之前**先 pause,能让两边状态始终一致:
+  ///   后面那次 play() 才是真正会下发到平台的请求(core 的 play() 第一行是
+  ///   `if (playing) return;`,状态不一致时它是空转的)。
+  Future<void> _alignBeforeLoad() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) return;
+    if (!player.playing) return;
+    try {
+      await player.pause();
+      debugPrint('[audio] Windows 换源前已暂停:核心与 WMF 状态对齐');
+    } catch (e) {
+      debugPrint('[audio] 换源前 pause 失败(不影响继续换源): $e');
     }
   }
 
