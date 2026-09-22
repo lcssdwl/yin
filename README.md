@@ -62,17 +62,14 @@ flutter run                                   # 调试运行
 
 ### 接口地址配置
 
-`lib/config/api_config.dart`（默认值），或运行时用 `--dart-define` 覆盖：
+后端地址**运行时从 `url.txt` 读取**，不写死在代码里。改地址只改这个文件即可，不用改代码、Windows 端甚至不用重新打包。
 
-| 场景 | 地址 |
-|------|------|
-| Android 模拟器 | `http://10.0.2.2:8000` |
-| 真机 / 局域网 | `http://192.168.x.x:8000`（电脑局域网 IP） |
-| 外网测试 | devtunnel 的 https 地址 |
+| 平台 | 改哪个文件 | 是否需重编 | 说明 |
+|------|-----------|-----------|------|
+| Android | `flutter_app/assets/url.txt` | **需要**重编 APK | 内容随 APK 固化，安装后不可再改；改完执行 `flutter build apk` |
+| Windows | exe 同目录 `url.txt`（发布包：`云韵音乐-vX.X.X-win64\url.txt`；本地调试：`build\windows\x64\runner\Release\url.txt`） | **不需要** | 记事本改完保存，重启 App 即生效 |
 
-```bash
-flutter run --dart-define=API_BASE_URL=https://xxx.devtunnels.ms
-```
+`url.txt` 文件格式：一行纯地址，例如 `http://192.168.1.10:8000` 或 `https://xxxx.devtunnels.ms`，前后空格会被自动去掉；不要写注释、不要加引号。文件缺失或为空时，自动回退到默认地址 `http://10.126.126.10:8000`。
 
 > 服务端走 HTTP 时，Android 需 `usesCleartextTraffic="true"`(已配置)，iOS 需 ATS 例外(已配置)。
 
