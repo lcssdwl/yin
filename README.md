@@ -80,25 +80,39 @@ flutter run --dart-define=API_BASE_URL=https://xxx.devtunnels.ms
 
 ## 四、接口约定(服务端需实现)
 
-统一前缀 `/api/v1`，请求参数以 AES-256-CBC 加密后放在 `enc` 字段，返回 `{code, msg, data}`。
-🟢 公开 / 🔴 需登录(Header：`Authorization: Bearer <token>`)
+统一前缀 `/api/v1`；请求参数以 AES-256-CBC 加密后放在 `enc` 字段；返回 `{code, msg, data}`。
+
+标记说明：**【需登录】** 必须带 `Authorization: Bearer <token>`；没写标记的即 **【公开】**，游客可用。
+（下面每一条**都是已实现**的接口，已与 Go 服务端路由逐条核对。）
 
 ```
-首页    GET  /home/index          banner + 歌单 + 榜单 + 分类 + 推荐 + 最新
-        GET  /home/genre          分类列表(含 song_count)
-        GET  /home/recommend|newest|banner
-分类    GET  /genre/{id}/songs     某分类下歌曲(分页)
-搜索    GET  /search?keyword=&type=     /search/hot    /search/suggest
-歌曲    GET  /song/{id}  /song/url?id=&quality=  /song/lyric?id=  /song/batch?ids=
-        POST /song/play/{id}       POST /song/collect   🔴
-榜单    GET  /rank/list     /rank/{id}/songs
-歌手    GET  /singer/list?area=&initial=   /singer/{id}   /singer/{id}/songs   /singer/{id}/albums
-专辑    GET  /album/{id}    /album/{id}/songs
-歌单    GET  /playlist/hot  /playlist/{id}  /playlist/{id}/songs
-        GET  /playlist/my   POST /playlist/create|addSong|removeSong|collect   🔴
-评论    GET  /comment/list   POST /comment/add|like   🔴
-用户    POST /user/register|login   GET /user/info   POST /user/update|sync|logout
-        GET  /user/collects?type=   /user/history          🔴
+首页    【公开】GET  /home/index          banner + 歌单 + 榜单 + 分类 + 推荐 + 最新
+        【公开】GET  /home/banner         /home/recommend(分页)   /home/newest
+        【公开】GET  /home/genre          分类列表(含 song_count)
+分类    【公开】GET  /genre/{id}/songs     某分类下歌曲(分页)
+搜索    【公开】GET  /search?keyword=&type=      /search/hot     /search/suggest
+歌曲    【公开】GET  /song/{id}   /song/url?id=&quality=   /song/lyric?id=
+        【公开】GET  /song/similar?id=   /song/batch?ids=
+        【公开】POST /song/play/{id}      上报播放
+        【需登录】POST /song/collect       收藏 / 取消收藏
+        【需登录】POST /song/listen        上报"实际听了多少秒"
+榜单    【公开】GET  /rank/list      /rank/{id}/songs
+歌手    【公开】GET  /singer/list?area=&initial=    /singer/{id}
+        【公开】GET  /singer/{id}/songs    /singer/{id}/albums
+专辑    【公开】GET  /album/{id}     /album/{id}/songs
+歌单    【公开】GET  /playlist/hot   /playlist/{id}   /playlist/{id}/songs
+        【需登录】GET  /playlist/my
+        【需登录】POST /playlist/create  /addSong  /removeSong  /collect  /delete
+评论    【公开】GET  /comment/list
+        【需登录】POST /comment/add   /comment/like
+用户    【公开】POST /user/register   /user/login
+        【需登录】POST /user/logout   /user/update   /user/password   /user/sync
+        【需登录】GET  /user/info   /user/collects?type=   /user/history
+        【需登录】POST /user/history/clear
+其它    【公开】GET  /ping   /app/config   /app/stats
+        【公开】POST /app/report
+        【公开】GET  /media/audio?id=&quality=&sign=    /media/cover?id=   时效签名防盗链
+        【公开】GET  /scan?token=xxx    外部定时扫描(需在后台配置 scan_token)
 ```
 
 ## 五、安全提醒
