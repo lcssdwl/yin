@@ -89,7 +89,9 @@ jobs:
             https://github.com/LCS6-SDWL/yin/releases/download/windows-latest/YunYunMusic-win64.zip
 
             解压后双击 music_app.exe 即可运行;接口地址在打包时已写入。
-          files: YunYunMusic-win64.zip
+          # 路径从仓库根目录写起(action 不受 working-directory 影响)
+          files: flutter_app/YunYunMusic-win64.zip
+          fail_on_unmatched_files: true
           # 重复运行时覆盖同名资产(否则第二次会报 already exists)
           overwrite_files: true
         env:

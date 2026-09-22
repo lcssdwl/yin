@@ -107,9 +107,13 @@ jobs:
             两个包的区别:
             - YunYunMusic-arm64.apk     真机手机用(体积小)
             - YunYunMusic-universal.apk 云手机 / 模拟器用(含 x86_64 与 32 位)
+          # 注意:action(不是 run 步骤)不受工作流的 working-directory 影响,
+          # 路径必须从**仓库根目录**写起,否则找不到文件、会生成一个没有附件的空发布
           files: |
-            YunYunMusic-arm64.apk
-            YunYunMusic-universal.apk
+            flutter_app/YunYunMusic-arm64.apk
+            flutter_app/YunYunMusic-universal.apk
+          # 找不到文件直接报错,别静默产出空发布
+          fail_on_unmatched_files: true
           # 重复运行时覆盖同名资产(否则第二次会报 already exists)
           overwrite_files: true
         env:
