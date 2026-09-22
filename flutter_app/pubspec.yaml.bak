@@ -1,0 +1,42 @@
+name: music_app
+description: 云韵音乐 - Flutter 音乐播放器 App(支持免登录游客模式)
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # 状态管理
+  provider: ^6.1.2
+
+  # 网络
+  dio: ^5.4.3
+
+  # 音频播放 + 后台播放/锁屏控制
+  just_audio: ^0.9.38
+  audio_service: ^0.18.14
+  audio_session: ^0.1.19
+
+  # 图片缓存
+  cached_network_image: ^3.3.1
+
+  # 本地存储(游客数据 / Token)
+  shared_preferences: ^2.2.3
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # 权限(本地音乐 / 通知)
+  permission_handler: ^11.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

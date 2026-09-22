@@ -1,0 +1,71 @@
+name: music_app
+description: 云韵音乐 - Flutter 音乐播放器 App(支持免登录游客模式)
+publish_to: 'none'
+version: 1.0.84+84
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # 状态管理
+  provider: ^6.1.2
+
+  # 网络
+  dio: ^5.4.3
+
+  # 音频播放 + 后台播放/锁屏控制
+  just_audio: ^0.9.38
+  # Windows 桌面端音频实现(just_audio 官方不含 Windows,需额外接入)
+  just_audio_windows: ^0.2.3
+  audio_service: ^0.18.14
+  audio_session: ^0.1.19
+
+  # 图片缓存
+  cached_network_image: ^3.3.1
+
+  # 本地存储(游客数据 / Token)
+  shared_preferences: ^2.2.3
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # 应用私有目录(音频本地缓存)
+  path_provider: ^2.1.4
+
+  # 读取 App 版本号(关于页动态显示,避免写死)
+  package_info_plus: ^8.0.0
+
+  # 缓存加密(AES-256-GCM,原生硬件加速)+ 密钥派生
+  cryptography: ^2.7.0
+  cryptography_flutter: ^2.3.2
+  crypto: ^3.0.3
+
+  # 权限(本地音乐 / 通知)
+  permission_handler: ^11.3.1
+
+  # 打开外部链接(轮播图 url 跳转)
+  url_launcher: ^6.2.5
+
+  # 系统分享(歌单 / 歌曲)
+  # 注意:7.x 的插件用 android-33 编译,与其 androidx 依赖(需 API 34+)冲突,必须用 10.x
+  share_plus: ^10.1.4
+
+  # 列表项侧滑操作(滑出小块删除按钮,点击才删除)
+  flutter_slidable: ^3.1.2
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+# 本地补丁版 audio_service:
+# 官方 0.18.19 在 Android 13/14 上不调用 MediaStyle.setShowActionsInCompactView,
+# 导致系统媒体通知没有「上一首/播放/下一首」按钮和进度条(见 packages/audio_service)。
+dependency_overrides:
+  audio_service:
+    path: packages/audio_service
+
+flutter:
+  uses-material-design: true

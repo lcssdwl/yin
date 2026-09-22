@@ -1,0 +1,1 @@
+$env:JAVA_HOME="C:\jdk17"; $env:PATH="C:\jdk17\bin;$env:PATH"; Set-Location "c:\Users\Administrator\Desktop\yin\flutter_app"; flutter build apk --release --build-name=1.0.28 --build-number=28 2>&1 | Select-Object -Last 6; Copy-Item build\app\outputs\flutter-apk\app-release.apk ..\云韵音乐-v1.0.28.apk -Force; Get-Item ..\云韵音乐-v1.0.28.apk | Select-Object Name,Length,LastWriteTime

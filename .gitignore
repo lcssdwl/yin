@@ -1,0 +1,56 @@
+# ============================================================
+# 云韵音乐 · Git 忽略清单
+#
+# 仓库只放 App 源码:后端(go_backend / backend / tp)按约定不上传,
+# 安装包、编译产物、本机路径配置、签名文件也一律不进仓库。
+# ============================================================
+
+# ---------- 后端 / 服务端(不上传) ----------
+go_backend/
+backend/
+tp/
+
+# ---------- 安装包 / 打包产物(不上传) ----------
+*.apk
+*.aab
+*.ipa
+*.zip
+云韵音乐-*/
+vs_BuildTools.exe
+
+# ---------- Flutter / Dart ----------
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+**/build/
+**/.dart_tool/
+
+# ---------- Android ----------
+android/.gradle/
+android/local.properties
+android/key.properties
+*.jks
+*.keystore
+.cxx/
+
+# ---------- iOS ----------
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Runner/GeneratedPluginRegistrant.*
+xcuserdata/
+*.xcuserstate
+
+# ---------- IDE / 系统垃圾 ----------
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ---------- 本机临时文件 ----------
+_smoke*
+*.log

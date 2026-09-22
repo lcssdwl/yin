@@ -1,0 +1,66 @@
+name: iOS 未签名 ipa
+
+# 什么时候跑:
+#   - 手动:仓库 Actions 页 → 选本工作流 → Run workflow
+#   - 自动:推到 main 且 flutter_app 下有改动时
+#
+# 为什么在 GitHub 上编:iOS 只能在 macOS 上编译,
+# 这里借用 GitHub 免费提供的 macOS 机器,你本地(Windows)不用装任何苹果工具链。
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/ios-unsigned.yml'
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: flutter_app
+
+    steps:
+      - name: 拉代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Flutter(与本机一致 3.47.5)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+          cache: true
+
+      - name: 确定接口地址
+        # 仓库 Settings → Secrets and variables → Actions → Variables
+        # 新建 API_BASE_URL 可覆盖(devtunnel 换地址时改那里,不用改代码)
+        run: |
+          URL="${{ vars.API_BASE_URL }}"
+          if [ -z "$URL" ]; then
+            URL="https://nvh7g6dz-8000.asse.devtunnels.ms"
+          fi
+          echo "API_BASE_URL=$URL" >> "$GITHUB_ENV"
+          echo "本次打包使用的接口地址:$URL"
+
+      - name: 装依赖
+        run: flutter pub get
+
+      - name: 编译 iOS(不签名)
+        # 不签名也能编:产物是 Runner.app,后面用 Sideloadly / AltStore 自签安装
+        run: flutter build ios --release --no-codesign --dart-define=API_BASE_URL="$API_BASE_URL"
+
+      - name: 打成未签名 ipa
+        run: |
+          cd build/ios/iphoneos
+          mkdir -p Payload
+          cp -R Runner.app Payload/
+          zip -qry YunYunMusic-unsigned.ipa Payload
+          ls -lh YunYunMusic-unsigned.ipa
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-unsigned-ipa
+          path: flutter_app/build/ios/iphoneos/YunYunMusic-unsigned.ipa
+          retention-days: 30
