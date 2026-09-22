@@ -11,6 +11,10 @@ on:
 jobs:
   build-ios:
     runs-on: macos-latest
+
+    # 发布 Release 需要写权限(GITHUB_TOKEN 默认只读)
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: flutter_app
@@ -58,9 +62,25 @@ jobs:
           zip -qry YunYunMusic-unsigned.ipa Payload
           ls -lh YunYunMusic-unsigned.ipa
 
-      - name: 上传产物
+      - name: 上传产物(Artifacts,30 天)
         uses: actions/upload-artifact@v4
         with:
           name: ios-unsigned-ipa
           path: flutter_app/build/ios/iphoneos/YunYunMusic-unsigned.ipa
           retention-days: 30
+
+      - name: 发布到 Releases(固定下载直链)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-latest
+          name: "iOS 未签名 ipa(最新)"
+          body: |
+            未签名 ipa,用 Sideloadly / AltStore 借自己的 Apple ID 自签后安装(免费账号 7 天有效)。
+
+            固定直链(永久有效,每次运行覆盖更新):
+            https://github.com/LCS6-SDWL/yin/releases/download/ios-latest/YunYunMusic-unsigned.ipa
+          files: flutter_app/build/ios/iphoneos/YunYunMusic-unsigned.ipa
+          # 重复运行时覆盖同名资产(否则第二次会报 already exists)
+          overwrite_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

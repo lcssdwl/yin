@@ -9,6 +9,10 @@ jobs:
   build-apk:
     runs-on: ubuntu-latest
 
+    # 发布 Release 需要写权限(GITHUB_TOKEN 默认只读)
+    permissions:
+      contents: write
+
     # 可选:让 CI 打出的 APK 与你本机签名一致。
     # 不配也行 —— 但 CI 的 debug 签名和本机不同,覆盖安装会提示「应用未安装」,
     # 需要先卸载旧版。配法见 编译5.txt(把本机 debug.keystore 转 base64 存进 secret)。
@@ -34,9 +38,11 @@ jobs:
         # 注意:这里必须用多行写法(|)。写成单行 run: 时,命令里的
         # sed 's/version: *//' 含「冒号+空格」,在 YAML 里是非法标量
         run: |
-          VER=$(grep '^version:' pubspec.yaml | cut -d' ' -f2 | tr -d '\r')
+          FULL=$(grep '^version:' pubspec.yaml | cut -d' ' -f2 | tr -d '\r')
+          VER=${FULL%%+*}   # pubspec 是 1.0.84+84,+84 是安卓 versionCode,文件名只用 1.0.84
+          echo "APP_FULL=$FULL" >> "$GITHUB_ENV"
           echo "APP_VER=$VER" >> "$GITHUB_ENV"
-          echo "版本号:$VER"
+          echo "版本号:$VER (完整 $FULL)"
 
       - name: 确定接口地址
         # 仓库 Settings → Secrets and variables → Actions → Variables
@@ -67,9 +73,31 @@ jobs:
           cp build/app/outputs/flutter-apk/app-release.apk "YunYunMusic-v${APP_VER}-arm64.apk"
           ls -lh YunYunMusic-*.apk
 
-      - name: 上传产物
+      - name: 上传产物(Artifacts,30 天)
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: flutter_app/YunYunMusic-*.apk
           retention-days: 30
+
+      - name: 复制一份固定文件名的包(给 Releases 直链用)
+        run: cp "YunYunMusic-v${APP_VER}-arm64.apk" YunYunMusic-arm64.apk
+
+      - name: 发布到 Releases(固定下载直链)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-latest
+          name: "安卓 APK(最新)"
+          body: |
+            版本 ${{ env.APP_FULL }}
+
+            固定直链(永久有效,每次运行覆盖更新):
+            https://github.com/LCS6-SDWL/yin/releases/download/android-latest/YunYunMusic-arm64.apk
+
+            装之前注意:CI 的调试签名与本机不同,覆盖安装若提示「应用未安装」,先卸载旧版;
+            或在仓库 secret 里配置 DEBUG_KEYSTORE_BASE64 让两边签名一致。
+          files: YunYunMusic-arm64.apk
+          # 重复运行时覆盖同名资产(否则第二次会报 already exists)
+          overwrite_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

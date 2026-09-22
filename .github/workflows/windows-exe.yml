@@ -8,6 +8,10 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
+
+    # 发布 Release 需要写权限(GITHUB_TOKEN 默认只读)
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: flutter_app
@@ -26,8 +30,11 @@ jobs:
       - name: 读取版本号(pubspec.yaml)
         shell: pwsh
         run: |
-          $ver = ((Select-String -Path pubspec.yaml -Pattern '^version:').Line -replace 'version:\s*', '').Trim()
+          $full = ((Select-String -Path pubspec.yaml -Pattern '^version:').Line -replace 'version:\s*', '').Trim()
+          $ver = ($full -split '\+')[0]   # 1.0.84+84 → 文件名只用 1.0.84
+          "APP_FULL=$full" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "APP_VER=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "版本号 $ver (完整 $full)"
 
       - name: 确定接口地址
         # 仓库 Variables 里建 API_BASE_URL 可覆盖;桌面版本机测试常用 http://127.0.0.1:8000
@@ -53,9 +60,31 @@ jobs:
           Compress-Archive -Path "$out\*" -DestinationPath "YunYunMusic-v$env:APP_VER-win64.zip" -Force
           Get-Item YunYunMusic-*.zip | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
 
-      - name: 上传产物
+      - name: 上传产物(Artifacts,30 天)
         uses: actions/upload-artifact@v4
         with:
           name: windows-win64
           path: flutter_app/YunYunMusic-*.zip
           retention-days: 30
+
+      - name: 复制一份固定文件名的包(给 Releases 直链用)
+        shell: pwsh
+        run: Copy-Item "YunYunMusic-v$env:APP_VER-win64.zip" "YunYunMusic-win64.zip" -Force
+
+      - name: 发布到 Releases(固定下载直链)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: windows-latest
+          name: "Windows 桌面版(最新)"
+          body: |
+            版本 ${{ env.APP_FULL }}
+
+            固定直链(永久有效,每次运行覆盖更新):
+            https://github.com/LCS6-SDWL/yin/releases/download/windows-latest/YunYunMusic-win64.zip
+
+            解压后双击 music_app.exe 即可运行;接口地址在打包时已写入。
+          files: YunYunMusic-win64.zip
+          # 重复运行时覆盖同名资产(否则第二次会报 already exists)
+          overwrite_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
