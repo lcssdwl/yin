@@ -68,6 +68,7 @@ gen_icons.dart
 gen_smallicon.dart
 gen_notif_icons.ps1
 gen_key_obfuscate.dart
+gen_icon_all.dart
 diag_media.ps1
 
 # ---------- 本机临时文件 ----------
