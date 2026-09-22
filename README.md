@@ -6,20 +6,20 @@ Flutter 音乐播放器，支持 **Android / iOS / Windows 桌面**。**免登�
 > 服务端(Go 后端 `go_backend/`、旧 PHP `backend/`、`tp/`)与歌曲文件、缓存数据库、
 > 打包产物一律**不在此仓库**，已在 `.gitignore` 中排除。
 
-## 下载(编译好的安装包)
+## 下载
 
-| 平台 | 直接下载 |
+编译好的安装包统一在 **Releases** 页面下载:
+
+<https://github.com/LCS6-SDWL/yin/releases>
+
+| 发布 | 内容 |
 |---|---|
-| 安卓 APK(arm64) | `https://github.com/LCS6-SDWL/yin/releases/download/android-latest/YunYunMusic-arm64.apk` |
-| Windows 桌面版 | `https://github.com/LCS6-SDWL/yin/releases/download/windows-latest/YunYunMusic-win64.zip` |
-| iOS 未签名 ipa | `https://github.com/LCS6-SDWL/yin/releases/download/ios-latest/YunYunMusic-unsigned.ipa` |
+| 安卓 APK(最新) | arm64 安装包 |
+| Windows 桌面版(最新) | 免安装 zip(music_app.exe + dll + data) |
+| iOS 未签名 ipa(最新) | 未签名 ipa,需用 Sideloadly / AltStore 借自己的 Apple ID 自签后安装 |
 
-全部发布记录: <https://github.com/LCS6-SDWL/yin/releases>
-
-> 三条链接**固定不变**:在 Actions 里手动跑对应工作流(安卓 APK / Windows 桌面版 / iOS 未签名 ipa),
-> 发布页会自动覆盖更新,链接照旧可用。
-> iOS 的 ipa 未签名,需用 Sideloadly / AltStore 借自己的 Apple ID 自签后安装(免费账号 7 天有效)。
-> 私有仓库的直链需要登录 GitHub 才能下载。
+> 每次在 Actions 里手动跑对应工作流,这几条发布会自动覆盖更新。
+> 私有仓库需要登录 GitHub 才能下载。
 
 ## 一、目录结构
 
