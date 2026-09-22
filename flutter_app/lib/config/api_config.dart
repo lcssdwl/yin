@@ -4,13 +4,35 @@ import 'package:flutter/services.dart';
 
 /// 后端接口配置
 ///
-/// baseUrl 现在不再写死,而是**运行时从 url.txt 读取**(见 [ApiConfig.loadBaseUrl]):
-///  - Android : 读打包进 assets 的 assets/url.txt
-///  - Windows : 读 exe 同目录的 url.txt(外网隧道随时改、不用重打包)
-///  - 其它平台 / 文件缺失 / 读取失败 → 退回下面的 _defaultBaseUrl
+/// # baseUrl 怎么改(按平台,从 url.txt 读取,见 [ApiConfig.loadBaseUrl])
 ///
-/// 仍保留开发期覆盖:flutter run --dart-define=API_BASE_URL=https://xxx.devtunnels.ms
-/// (dart-define 优先级最高,会跳过 url.txt)
+/// 优先级(高 → 低):
+///   1. 编译期 dart-define 覆盖(开发联调用)
+///   2. 平台 url.txt(Android 资源 / Windows 本地文件)
+///   3. 兜底默认地址 [_defaultBaseUrl]
+///
+/// ───────────────────────────────────────────────────────────
+/// 【Android】打包固化,改的是资源文件,需要重新编译 APK
+///   位置: flutter_app/assets/url.txt
+///   步骤: 编辑该文件 → flutter build apk(或 flutter run)
+///   说明: 内容会打进 APK 的 assets,装到手机后不可再改,换地址必须重编。
+/// ───────────────────────────────────────────────────────────
+/// 【Windows】放外面,改的是 exe 同目录的文件,**不用重编**
+///   位置(二选一,等价):
+///     - 开发构建: build\windows\x64\runner\Release\url.txt
+///     - 发布目录: 云韵音乐-vX.X.X-win64\url.txt(和 music_app.exe 放一起)
+///   步骤: 用记事本打开 url.txt,改完保存,重启 App 即生效。
+///   说明: 外网隧道(devtunnel / cloudflared 等)换地址时,直接改这个文件最省事。
+/// ───────────────────────────────────────────────────────────
+/// 【开发联调】临时指定,优先级最高,会跳过上面的 url.txt
+///   flutter run --dart-define=API_BASE_URL=https://xxxx.devtunnels.ms
+///   flutter build apk --dart-define=API_BASE_URL=https://xxxx.devtunnels.ms
+/// ───────────────────────────────────────────────────────────
+/// 【url.txt 文件格式】
+///   - 只有一行: 纯后端地址,例如 http://192.168.1.10:8000 或 https://xxx.devtunnels.ms
+///   - 不要写注释、不要加引号、前后空格会被自动 trim 掉
+///   - 文件缺失 / 内容为空 / 读取失败 → 自动退回 [_defaultBaseUrl]
+/// ───────────────────────────────────────────────────────────
 class ApiConfig {
   ApiConfig._();
 
