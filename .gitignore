@@ -54,6 +54,17 @@ xcuserdata/
 .DS_Store
 Thumbs.db
 
+# ---------- 根目录的生成工具脚本(本地保留,不进仓库) ----------
+# 它们用来画 App 图标 / 默认封面 / 通知图标,以及混淆接口密钥;
+# 产物已经提交在 android res 与 lib 里,打包与 CI 都不需要这些脚本本身。
+gen_app_icon.dart
+gen_cover.dart
+gen_icons.dart
+gen_smallicon.dart
+gen_notif_icons.ps1
+gen_key_obfuscate.dart
+diag_media.ps1
+
 # ---------- 本机临时文件 ----------
 _smoke*
 *.log
