@@ -46,6 +46,12 @@ jobs:
       - name: 装依赖
         run: flutter pub get
 
+      - name: 环境诊断(编译失败时先看这一步的输出)
+        run: |
+          echo "===== Xcode ====="; xcodebuild -version
+          echo "===== CocoaPods ====="; pod --version
+          echo "===== flutter doctor ====="; flutter doctor -v
+
       - name: 编译 iOS(不签名)
         # 不签名也能编:产物是 Runner.app,后面用 Sideloadly / AltStore 自签安装
         run: flutter build ios --release --no-codesign --dart-define=API_BASE_URL="$API_BASE_URL"
