@@ -46,6 +46,11 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Duration? _completeLastPos;
   int _completeStuck = 0;
 
+  /// 最近一次拖动进度条(seek)的时刻。
+  /// 大体积 FLAC seek 后需要重新缓冲,位置会短暂不动,容易被误判为「放完」,
+  /// 所以 seek 后给一段冷却期,期间不累计、也不触发完成判定。
+  DateTime? _lastSeekAt;
+
   MusicAudioHandler() {
     // 恢复上次选中的音效(存储此时已初始化)
     AudioEffects.instance.loadSaved();
@@ -69,10 +74,17 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       // 也覆盖「无损太大、网络流到不了结尾」的情况。仅无损启用,MP3 不受影响。
       if (losslessFallback) {
         final st = player.processingState;
-        // 加载/弱网缓冲期间不算结束(否则会误跳过正常播放)。
+        // 刚拖动过进度条:大文件 seek 后需重新缓冲,位置会短暂不动,
+        // 不能误判为「放完」。给 8 秒冷却,期间不累计、也不触发完成。
+        final cooling = _lastSeekAt != null &&
+            DateTime.now().difference(_lastSeekAt!) <
+                const Duration(seconds: 8);
+        // 加载/弱网缓冲/冷却期间不算结束(否则会误跳过正常播放)。
         // 仅当「已实质播放过(>10s)且位置连续 5 秒不前进」才判定放完 ——
         // 覆盖「无损太大、流媒体无明确结尾」导致 just_audio 始终停在结尾的情况。
-        if (st == ProcessingState.buffering || st == ProcessingState.loading) {
+        if (st == ProcessingState.buffering ||
+            st == ProcessingState.loading ||
+            cooling) {
           _completeStuck = 0;
         } else if (pos > const Duration(seconds: 10)) {
           if (_completeLastPos != null && pos <= _completeLastPos! && !_endFired) {
@@ -146,6 +158,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _endFired = false;
     _completeLastPos = null;
     _completeStuck = 0;
+    _lastSeekAt = null;
     mediaItem.add(_toMediaItem(song));
 
     // ★ Windows 必须先对齐播放状态再换源(见 _alignBeforeLoad 的说明)。
@@ -236,7 +249,14 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> pause() => player.pause();
 
   @override
-  Future<void> seek(Duration position) => player.seek(position);
+  Future<void> seek(Duration position) async {
+    // 记录 seek 时刻并复位兜底状态:大文件重定位后位置会短暂不动,
+    // 冷却期内不把它误判成「放完」(见 _startTicker 的完成兜底逻辑)。
+    _lastSeekAt = DateTime.now();
+    _completeStuck = 0;
+    _completeLastPos = null;
+    await player.seek(position);
+  }
 
   @override
   Future<void> stop() async {
