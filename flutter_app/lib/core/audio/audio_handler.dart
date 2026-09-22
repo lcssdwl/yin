@@ -32,25 +32,6 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Timer? _ticker;
   int _lastTickSecond = -1;
 
-  /// 当前曲目是否无损(FLAC)。
-  ///
-  /// just_audio(底层 ExoPlayer)在播放 FLAC 时**常常不下发** `ProcessingState.completed`,
-  /// 于是 `onComplete` 永不被调用 —— 表现就是「无损播完不自动切下一首,
-  /// 顺序/随机/循环模式全部失效」,但手动点上下首却正常(那是主动切歌,不走完成事件)。
-  /// 这里用「播放位置逼近结尾」兜底触发 onComplete,且仅对无损启用,不影响 MP3 正常逻辑。
-  bool losslessFallback = false;
-
-  /// 位置兜底触发完成的内部状态(避免重复触发)
-  /// 位置兜底触发完成的内部状态(仅无损启用,避免重复触发)
-  bool _endFired = false;
-  Duration? _completeLastPos;
-  int _completeStuck = 0;
-
-  /// 最近一次拖动进度条(seek)的时刻。
-  /// 大体积 FLAC seek 后需要重新缓冲,位置会短暂不动,容易被误判为「放完」,
-  /// 所以 seek 后给一段冷却期,期间不累计、也不触发完成判定。
-  DateTime? _lastSeekAt;
-
   MusicAudioHandler() {
     // 恢复上次选中的音效(存储此时已初始化)
     AudioEffects.instance.loadSaved();
@@ -66,44 +47,6 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!player.playing) return;
       final pos = player.position;
-
-      // FLAC 完成兜底:just_audio 常不下发 ProcessingState.completed,
-      // 而 player.duration 对无损又常不可靠(被高估 / 大文件无 Content-Length),
-      // 所以不能靠「位置逼近结尾」判定。
-      // 改用「已播过一小段(>5s)后,位置连续 3 秒不前进」来识别放完 ——
-      // 也覆盖「无损太大、网络流到不了结尾」的情况。仅无损启用,MP3 不受影响。
-      if (losslessFallback) {
-        final st = player.processingState;
-        // 刚拖动过进度条:大文件 seek 后需重新缓冲,位置会短暂不动,
-        // 不能误判为「放完」。给 8 秒冷却,期间不累计、也不触发完成。
-        final cooling = _lastSeekAt != null &&
-            DateTime.now().difference(_lastSeekAt!) <
-                const Duration(seconds: 8);
-        // 加载/弱网缓冲/冷却期间不算结束(否则会误跳过正常播放)。
-        // 仅当「已实质播放过(>10s)且位置连续 5 秒不前进」才判定放完 ——
-        // 覆盖「无损太大、流媒体无明确结尾」导致 just_audio 始终停在结尾的情况。
-        if (st == ProcessingState.buffering ||
-            st == ProcessingState.loading ||
-            cooling) {
-          _completeStuck = 0;
-        } else if (pos > const Duration(seconds: 10)) {
-          if (_completeLastPos != null && pos <= _completeLastPos! && !_endFired) {
-            _completeStuck++;
-            if (_completeStuck >= 5) {
-              _endFired = true;
-              debugPrint('[audio] FLAC 卡住兜底触发 onComplete '
-                  'pos=${pos.inSeconds}s state=$st');
-              onComplete?.call();
-            }
-          } else {
-            _completeStuck = 0;
-            _completeLastPos = pos;
-          }
-        } else {
-          _completeStuck = 0;
-          _completeLastPos = pos;
-        }
-      }
 
       if (pos.inSeconds == _lastTickSecond) return;
       _lastTickSecond = pos.inSeconds;
@@ -154,11 +97,6 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// 本地文件必须用 setFilePath,否则 just_audio 会当成 URL 解析而失败。
   Future<void> loadSong(Song song) async {
     debugPrint('[audio] loadSong #${song.id} 「${song.name}」');
-    // 新歌:清掉上一首的兜底完成状态,避免误判「已到结尾」
-    _endFired = false;
-    _completeLastPos = null;
-    _completeStuck = 0;
-    _lastSeekAt = null;
     mediaItem.add(_toMediaItem(song));
 
     // ★ Windows 必须先对齐播放状态再换源(见 _alignBeforeLoad 的说明)。
@@ -249,14 +187,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> pause() => player.pause();
 
   @override
-  Future<void> seek(Duration position) async {
-    // 记录 seek 时刻并复位兜底状态:大文件重定位后位置会短暂不动,
-    // 冷却期内不把它误判成「放完」(见 _startTicker 的完成兜底逻辑)。
-    _lastSeekAt = DateTime.now();
-    _completeStuck = 0;
-    _completeLastPos = null;
-    await player.seek(position);
-  }
+  Future<void> seek(Duration position) => player.seek(position);
 
   @override
   Future<void> stop() async {

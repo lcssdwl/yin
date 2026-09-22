@@ -485,8 +485,6 @@ class PlayerProvider extends ChangeNotifier {
       _queue[idx] = song;
 
       await _handler.setQueue(_queue, index: idx);
-      // 仅无损需要位置兜底触发完成事件(见 MusicAudioHandler.losslessFallback)
-      _handler.losslessFallback = (_actualQuality ?? _quality) == 'flac';
       await _handler.loadSong(song);
 
       // 载入过程中又被切走(载入也要几百毫秒):同样交给新的那一次去收尾,
@@ -1192,7 +1190,6 @@ class PlayerProvider extends ChangeNotifier {
       if (fresh.playUrl.isNotEmpty && fresh.playUrl != song.playUrl) {
         // 拿到新地址:重新加载,避免继续用过期地址
         debugPrint('[player] replay: reload with fresh url');
-        _handler.losslessFallback = (_actualQuality ?? _quality) == 'flac';
         await _handler.loadSong(fresh);
       } else {
         // 地址没变(离线等兜底情况):原地重播
