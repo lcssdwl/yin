@@ -12,6 +12,12 @@ jobs:
     # 发布 Release 需要写权限(GITHUB_TOKEN 默认只读)
     permissions:
       contents: write
+
+    # 双保险:CI 上的 MSVC 比本机新,会把插件的 <experimental/coroutine> 判成硬错误。
+    # CMake 那边已经在 APPLY_STANDARD_SETTINGS 里加了同样的宏,这里再通过 CL 环境变量兜一层。
+    env:
+      CL: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
+
     defaults:
       run:
         working-directory: flutter_app

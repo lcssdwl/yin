@@ -43,6 +43,14 @@ function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_options(${TARGET} PRIVATE /EHsc)
   target_compile_definitions(${TARGET} PRIVATE "_HAS_EXCEPTIONS=0")
   target_compile_definitions(${TARGET} PRIVATE "$<$<CONFIG:Debug>:_DEBUG>")
+  # 新版 MSVC(14.5x / 较新的 VS)把 <experimental/coroutine> + /await 判成硬错误:
+  #   error C2338: STL1011: The /await compiler option, <experimental/coroutine>,
+  #   <experimental/generator>, <experimental/resumable> are deprecated ... REMOVED SOON
+  # 而 just_audio_windows / permission_handler_windows 等插件(用 C++/WinRT 协程)还在用它,
+  # 导致 CI 上(MSVC 更新)编译失败、本机(MSVC 较旧)却正常。
+  # 这个宏把它降级为警告;等插件升级后可删掉这两行。
+  target_compile_definitions(${TARGET} PRIVATE
+    "_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS")
 endfunction()
 
 # Flutter library and tool build rules.
