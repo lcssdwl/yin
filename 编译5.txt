@@ -1,0 +1,46 @@
+# 云韵音乐 · 云端自动打包(GitHub Actions)
+#
+# 三个工作流,都在仓库的 Actions 页里,点「Run workflow」即可:
+#   1) 安卓 APK          → android-apk.yml
+#   2) Windows 桌面版    → windows-exe.yml
+#   3) iOS 未签名 ipa    → ios-unsigned.yml
+#
+# 产物都在那次运行页面底部的 Artifacts 里下载(是 zip,解开就是成品)。
+# 版本号自动取 pubspec.yaml 的 version,文件名形如:
+#   YunYunMusic-v1.0.84-84-arm64.apk
+#   YunYunMusic-v1.0.84-84-win64.zip
+#   YunYunMusic-unsigned.ipa
+#
+# 换服务器地址:仓库 Settings → Secrets and variables → Actions → Variables
+#   新建 API_BASE_URL = https://xxx(devtunnel 换域名时改这里,不用改代码)
+#   不配置时默认用 https://nvh7g6dz-8000.asse.devtunnels.ms
+#
+# 触发方式:
+#   - 手动:Actions → 左侧选工作流 → 右上 Run workflow
+#   - 自动:往 main 推、且 flutter_app/ 下有改动时自动跑
+#
+# ========== 安卓 APK 的签名差异(重要) ==========
+# 本工程 release 用的还是 Flutter 默认的「调试签名」(android/app/build.gradle.kts
+# 里 signingConfig = debug)。而调试签名是**每台机器各自生成**的,所以:
+#   - CI 打的 APK 和你本机打的 APK 签名不同
+#   - 用 CI 的包覆盖安装本机的包,会提示「应用未安装」
+#   - 解决:先卸载手机上的旧版,再装 CI 的包
+#
+# 想让两边签名一致(以后可以直接覆盖安装),把本机调试签名传给 CI:
+#   1) 在本机 PowerShell 里跑(会把 base64 直接复制到剪贴板):
+#        [Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\.android\debug.keystore")) | Set-Clipboard
+#   2) GitHub 仓库 → Settings → Secrets and variables → Actions → New repository secret
+#        名字:DEBUG_KEYSTORE_BASE64   值:粘贴(刚复制的内容)
+#   3) 重新跑一次安卓工作流即可 —— 工作流检测到这个 secret 就会用你的签名
+#
+# ========== 免费额度 ==========
+# 私有仓库:每月 2000 分钟。
+#   Linux(安卓)  按 1 倍  → 约 200 次
+#   Windows      按 2 倍  → 约 100 次
+#   macOS(iOS)   按 10 倍 → 约 20 次
+#
+# ========== 首次可能遇到的小坑 ==========
+# - 安卓首次可能报 NDK 版本缺失:按报错里提示的版本号,在 android-apk.yml 里
+#   加一步 `yes | sdkmanager --install "ndk;<版本>"` 即可。
+# - iOS 首次可能报 CocoaPods 相关:工程里已带 ios/Podfile(platform 15.0),
+#   若仍报错,把红色那步的日志发我。

@@ -1,0 +1,76 @@
+name: 安卓 APK
+
+# 什么时候跑:
+#   - 手动:仓库 Actions 页 → 选本工作流 → Run workflow
+#   - 自动:推到 main 且 flutter_app 下有改动时
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/android-apk.yml'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    # 可选:让 CI 打出的 APK 与你本机签名一致。
+    # 不配也行 —— 但 CI 的 debug 签名和本机不同,覆盖安装会提示「应用未安装」,
+    # 需要先卸载旧版。配法见 编译5.txt(把本机 debug.keystore 转 base64 存进 secret)。
+    env:
+      KS_B64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+
+    defaults:
+      run:
+        working-directory: flutter_app
+
+    steps:
+      - name: 拉代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Flutter(与本机一致 3.47.5)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+          cache: true
+
+      - name: 读取版本号(pubspec.yaml)
+        run: echo "APP_VER=$(grep '^version:' pubspec.yaml | sed 's/version: *//' | tr -d '\r')" >> "$GITHUB_ENV"
+
+      - name: 确定接口地址
+        # 仓库 Settings → Secrets and variables → Actions → Variables
+        # 新建 API_BASE_URL 可覆盖(换服务器时改那里,不用改代码)
+        run: |
+          URL="${{ vars.API_BASE_URL }}"
+          if [ -z "$URL" ]; then
+            URL="https://nvh7g6dz-8000.asse.devtunnels.ms"
+          fi
+          echo "API_BASE_URL=$URL" >> "$GITHUB_ENV"
+          echo "版本 $APP_VER / 接口地址 $URL"
+
+      - name: 写入本机调试签名(仅当配置了 secret)
+        if: ${{ env.KS_B64 != '' }}
+        run: |
+          mkdir -p ~/.android
+          echo "$KS_B64" | base64 -d > ~/.android/debug.keystore
+          echo "已使用仓库 secret 里的 debug.keystore(与本机签名一致)"
+
+      - name: 装依赖
+        run: flutter pub get
+
+      - name: 编译 APK(arm64,与本地打包一致)
+        run: flutter build apk --release --target-platform android-arm64 --dart-define=API_BASE_URL="$API_BASE_URL"
+
+      - name: 按版本号改名
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk "YunYunMusic-v${APP_VER}-arm64.apk"
+          ls -lh YunYunMusic-*.apk
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: flutter_app/YunYunMusic-*.apk
+          retention-days: 30

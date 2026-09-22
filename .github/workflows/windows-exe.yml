@@ -1,0 +1,67 @@
+name: Windows 桌面版
+
+# 什么时候跑:
+#   - 手动:仓库 Actions 页 → 选本工作流 → Run workflow
+#   - 自动:推到 main 且 flutter_app 下有改动时
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/windows-exe.yml'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: flutter_app
+
+    steps:
+      - name: 拉代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Flutter(与本机一致 3.47.5)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+          cache: true
+
+      - name: 读取版本号(pubspec.yaml)
+        shell: pwsh
+        run: |
+          $ver = ((Select-String -Path pubspec.yaml -Pattern '^version:').Line -replace 'version:\s*', '').Trim()
+          "APP_VER=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: 确定接口地址
+        # 仓库 Variables 里建 API_BASE_URL 可覆盖;桌面版本机测试常用 http://127.0.0.1:8000
+        shell: pwsh
+        run: |
+          $url = "${{ vars.API_BASE_URL }}"
+          if ([string]::IsNullOrWhiteSpace($url)) {
+            $url = "https://nvh7g6dz-8000.asse.devtunnels.ms"
+          }
+          "API_BASE_URL=$url" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "版本 $env:APP_VER / 接口地址 $url"
+
+      - name: 装依赖
+        run: flutter pub get
+
+      - name: 编译 Windows 桌面版
+        run: flutter build windows --release --dart-define=API_BASE_URL="$env:API_BASE_URL"
+
+      - name: 打包成 zip(exe + dll + data)
+        shell: pwsh
+        run: |
+          $out = "build\windows\x64\runner\Release"
+          Compress-Archive -Path "$out\*" -DestinationPath "YunYunMusic-v$env:APP_VER-win64.zip" -Force
+          Get-Item YunYunMusic-*.zip | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-win64
+          path: flutter_app/YunYunMusic-*.zip
+          retention-days: 30
