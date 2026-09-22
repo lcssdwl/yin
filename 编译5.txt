@@ -15,9 +15,13 @@
 #   新建 API_BASE_URL = https://xxx(devtunnel 换域名时改这里,不用改代码)
 #   不配置时默认用 https://nvh7g6dz-8000.asse.devtunnels.ms
 #
-# 触发方式:
-#   - 手动:Actions → 左侧选工作流 → 右上 Run workflow
-#   - 自动:往 main 推、且 flutter_app/ 下有改动时自动跑
+# 触发方式:**只手动**(故意没加自动触发,免得每次 push 都消耗额度)
+#   Actions → 左侧选工作流 → 右上 Run workflow
+#
+# 直达链接(不用在侧边栏里找):
+#   安卓     https://github.com/LCS6-SDWL/yin/actions/workflows/android-apk.yml
+#   Windows  https://github.com/LCS6-SDWL/yin/actions/workflows/windows-exe.yml
+#   iOS      https://github.com/LCS6-SDWL/yin/actions/workflows/ios-unsigned.yml
 #
 # ========== 安卓 APK 的签名差异(重要) ==========
 # 本工程 release 用的还是 Flutter 默认的「调试签名」(android/app/build.gradle.kts
