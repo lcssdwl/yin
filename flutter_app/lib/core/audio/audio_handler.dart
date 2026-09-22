@@ -41,9 +41,10 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   bool losslessFallback = false;
 
   /// 位置兜底触发完成的内部状态(避免重复触发)
+  /// 位置兜底触发完成的内部状态(仅无损启用,避免重复触发)
   bool _endFired = false;
-  Duration? _lastPos;
-  DateTime? _lastAdvanceAt;
+  Duration? _completeLastPos;
+  int _completeStuck = 0;
 
   MusicAudioHandler() {
     // 恢复上次选中的音效(存储此时已初始化)
@@ -60,6 +61,38 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!player.playing) return;
       final pos = player.position;
+
+      // FLAC 完成兜底:just_audio 常不下发 ProcessingState.completed,
+      // 而 player.duration 对无损又常不可靠(被高估 / 大文件无 Content-Length),
+      // 所以不能靠「位置逼近结尾」判定。
+      // 改用「已播过一小段(>5s)后,位置连续 3 秒不前进」来识别放完 ——
+      // 也覆盖「无损太大、网络流到不了结尾」的情况。仅无损启用,MP3 不受影响。
+      if (losslessFallback) {
+        final st = player.processingState;
+        // 加载/弱网缓冲期间不算结束(否则会误跳过正常播放)。
+        // 仅当「已实质播放过(>10s)且位置连续 5 秒不前进」才判定放完 ——
+        // 覆盖「无损太大、流媒体无明确结尾」导致 just_audio 始终停在结尾的情况。
+        if (st == ProcessingState.buffering || st == ProcessingState.loading) {
+          _completeStuck = 0;
+        } else if (pos > const Duration(seconds: 10)) {
+          if (_completeLastPos != null && pos <= _completeLastPos! && !_endFired) {
+            _completeStuck++;
+            if (_completeStuck >= 5) {
+              _endFired = true;
+              debugPrint('[audio] FLAC 卡住兜底触发 onComplete '
+                  'pos=${pos.inSeconds}s state=$st');
+              onComplete?.call();
+            }
+          } else {
+            _completeStuck = 0;
+            _completeLastPos = pos;
+          }
+        } else {
+          _completeStuck = 0;
+          _completeLastPos = pos;
+        }
+      }
+
       if (pos.inSeconds == _lastTickSecond) return;
       _lastTickSecond = pos.inSeconds;
       playbackState.add(
@@ -101,37 +134,6 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
         onComplete?.call();
       }
     });
-
-    // 位置兜底:FLAC 不下发 completed 时,用「位置逼近结尾」补触发 onComplete。
-    // 两种命中:① 位置到达结尾前 600ms;② 已在 95% 处且 1.5s 内位置没推进
-    // (兼容时长被高估 / 尾部静音导致永远到不了真正的结尾)。
-    player.positionStream.listen((pos) {
-      if (!losslessFallback) return;
-      final dur = player.duration;
-      if (dur == null || dur <= Duration.zero) {
-        _endFired = false;
-        _lastPos = null;
-        _lastAdvanceAt = null;
-        return;
-      }
-      if (_lastPos == null || pos > _lastPos!) {
-        _lastPos = pos;
-        _lastAdvanceAt = DateTime.now();
-      }
-      final nearEnd = pos >= dur - const Duration(milliseconds: 600);
-      final stuckNearEnd = pos >= dur * 95 ~/ 100 &&
-          _lastAdvanceAt != null &&
-          DateTime.now().difference(_lastAdvanceAt!) >
-              const Duration(milliseconds: 1500);
-      if (player.playing && (nearEnd || stuckNearEnd) && !_endFired) {
-        _endFired = true;
-        debugPrint('[audio] FLAC 位置兜底触发 onComplete '
-            'pos=${pos.inSeconds}s dur=${dur.inSeconds}s');
-        onComplete?.call();
-      } else if (pos < dur - const Duration(seconds: 1)) {
-        _endFired = false;
-      }
-    });
   }
 
   /// 载入歌曲(不自动播放)
@@ -140,10 +142,10 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// 本地文件必须用 setFilePath,否则 just_audio 会当成 URL 解析而失败。
   Future<void> loadSong(Song song) async {
     debugPrint('[audio] loadSong #${song.id} 「${song.name}」');
-    // 新歌:清掉上一首的位置兜底状态,避免误判「已到结尾」
+    // 新歌:清掉上一首的兜底完成状态,避免误判「已到结尾」
     _endFired = false;
-    _lastPos = null;
-    _lastAdvanceAt = null;
+    _completeLastPos = null;
+    _completeStuck = 0;
     mediaItem.add(_toMediaItem(song));
 
     // ★ Windows 必须先对齐播放状态再换源(见 _alignBeforeLoad 的说明)。
