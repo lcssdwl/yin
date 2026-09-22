@@ -44,16 +44,17 @@ jobs:
           echo "APP_VER=$VER" >> "$GITHUB_ENV"
           echo "版本号:$VER (完整 $FULL)"
 
-      - name: 确定接口地址
+      - name: 确定接口地址并写入 url.txt
         # 仓库 Settings → Secrets and variables → Actions → Variables
         # 新建 API_BASE_URL 可覆盖(换服务器时改那里,不用改代码)
+        # 地址写入 assets/url.txt(打包进 APK),不再用 dart-define
         run: |
           URL="${{ vars.API_BASE_URL }}"
           if [ -z "$URL" ]; then
             URL="https://nvh7g6dz-8000.asse.devtunnels.ms"
           fi
-          echo "API_BASE_URL=$URL" >> "$GITHUB_ENV"
-          echo "版本 $APP_VER / 接口地址 $URL"
+          printf '%s' "$URL" > assets/url.txt
+          echo "版本 $APP_VER / 接口地址 $URL (已写入 assets/url.txt)"
 
       - name: 写入本机调试签名(仅当配置了 secret)
         if: ${{ env.KS_B64 != '' }}
@@ -66,7 +67,7 @@ jobs:
         run: flutter pub get
 
       - name: 编译 APK(arm64,手机用)
-        run: flutter build apk --release --target-platform android-arm64 --dart-define=API_BASE_URL="$API_BASE_URL"
+        run: flutter build apk --release --target-platform android-arm64
 
       - name: 保存 arm64 包
         run: cp build/app/outputs/flutter-apk/app-release.apk "YunYunMusic-v${APP_VER}-arm64.apk"
@@ -74,7 +75,7 @@ jobs:
       - name: 编译通用 APK(arm64 + armeabi-v7a + x86_64,云手机/模拟器用)
         # 云手机、安卓模拟器常是 x86_64 或 32 位,只装 arm64 包会「解析包错误 / 闪退」
         run: |
-          flutter build apk --release --dart-define=API_BASE_URL="$API_BASE_URL"
+          flutter build apk --release
           cp build/app/outputs/flutter-apk/app-release.apk "YunYunMusic-v${APP_VER}-universal.apk"
           ls -lh YunYunMusic-*.apk
 

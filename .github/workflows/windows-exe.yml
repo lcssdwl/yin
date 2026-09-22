@@ -56,8 +56,13 @@ jobs:
       - name: 装依赖
         run: flutter pub get
 
-      - name: 编译 Windows 桌面版
-        run: flutter build windows --release --dart-define=API_BASE_URL="$env:API_BASE_URL"
+      - name: 编译 Windows 桌面版并写入 url.txt
+        run: |
+          flutter build windows --release
+          $url = "$env:API_BASE_URL"
+          if ([string]::IsNullOrWhiteSpace($url)) { $url = "https://nvh7g6dz-8000.asse.devtunnels.ms" }
+          [System.IO.File]::WriteAllText("build\windows\x64\runner\Release\url.txt", $url)
+          Write-Host "接口地址已写入 url.txt : $url"
 
       - name: 打包成 zip(exe + dll + data)
         shell: pwsh

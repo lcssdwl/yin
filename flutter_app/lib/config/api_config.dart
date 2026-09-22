@@ -7,8 +7,8 @@ import 'package:flutter/services.dart';
 /// # baseUrl 怎么改(按平台,从 url.txt 读取,见 [ApiConfig.loadBaseUrl])
 ///
 /// 优先级(高 → 低):
-///   1. 编译期 dart-define 覆盖(开发联调用)
-///   2. 平台 url.txt(Android 资源 / Windows 本地文件)
+///   1. 平台 url.txt(Android/iOS 资源 / Windows 本地文件)—— 服务器地址的唯一权威来源
+///   2. 编译期 dart-define 覆盖(仅当 url.txt 缺失/为空时兜底,主要用于 CI)
 ///   3. 兜底默认地址 [_defaultBaseUrl]
 ///
 /// ───────────────────────────────────────────────────────────
@@ -51,20 +51,13 @@ class ApiConfig {
 
   /// 启动时按平台加载后端地址,**必须在 DioClient.init() 之前调用**。
   ///
-  ///  - Android: 读 assets/url.txt(已用 pubspec 的 assets 注册)
+  ///  - Android / iOS: 读 assets/url.txt(已用 pubspec 的 assets 注册,打包固化)
   ///  - Windows: 读 exe 同目录的 url.txt,方便外网隧道换地址时直接改文件、无需重打包
   ///  - 其它平台 / 文件缺失 / 读取异常 → 退回 _defaultBaseUrl
   static Future<void> loadBaseUrl() async {
-    // 1) dart-define 优先级最高,开发期联调时仍可用
-    if (_envBaseUrl.isNotEmpty) {
-      baseUrl = _envBaseUrl;
-      print('[api] baseUrl 来自 dart-define: $baseUrl');
-      return;
-    }
-
-    // 2) 按平台从 url.txt 读取
+    // 1) 平台 url.txt 为最高优先级:服务器地址一律由它决定
     String? fromFile;
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid || Platform.isIOS) {
       try {
         fromFile = (await rootBundle.loadString('assets/url.txt')).trim();
       } catch (e) {
@@ -77,7 +70,7 @@ class ApiConfig {
         if (await file.exists()) {
           fromFile = (await file.readAsString()).trim();
         } else {
-          print('[api] 未找到 url.txt(将用默认值): $dir');
+          print('[api] 未找到 url.txt(将尝试 dart-define/默认值): $dir');
         }
       } catch (e) {
         print('[api] 读取本地 url.txt 失败: $e');
@@ -87,10 +80,19 @@ class ApiConfig {
     if (fromFile != null && fromFile.isNotEmpty) {
       baseUrl = fromFile;
       print('[api] baseUrl 来自 url.txt: $baseUrl');
-    } else {
-      baseUrl = _defaultBaseUrl;
-      print('[api] baseUrl 使用默认值: $baseUrl');
+      return;
     }
+
+    // 2) 兜底:编译期 dart-define(仅当 url.txt 缺失/为空时用,主要用于 CI / 临时联调)
+    if (_envBaseUrl.isNotEmpty) {
+      baseUrl = _envBaseUrl;
+      print('[api] baseUrl 来自 dart-define: $baseUrl');
+      return;
+    }
+
+    // 3) 最终兜底:默认地址
+    baseUrl = _defaultBaseUrl;
+    print('[api] baseUrl 使用默认值: $baseUrl');
   }
 
   static const Duration connectTimeout = Duration(seconds: 15);
