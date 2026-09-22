@@ -31,7 +31,12 @@ jobs:
           cache: true
 
       - name: 读取版本号(pubspec.yaml)
-        run: echo "APP_VER=$(grep '^version:' pubspec.yaml | sed 's/version: *//' | tr -d '\r')" >> "$GITHUB_ENV"
+        # 注意:这里必须用多行写法(|)。写成单行 run: 时,命令里的
+        # sed 's/version: *//' 含「冒号+空格」,在 YAML 里是非法标量
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | cut -d' ' -f2 | tr -d '\r')
+          echo "APP_VER=$VER" >> "$GITHUB_ENV"
+          echo "版本号:$VER"
 
       - name: 确定接口地址
         # 仓库 Settings → Secrets and variables → Actions → Variables
