@@ -32,6 +32,19 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Timer? _ticker;
   int _lastTickSecond = -1;
 
+  /// 当前曲目是否无损(FLAC)。
+  ///
+  /// just_audio(底层 ExoPlayer)在播放 FLAC 时**常常不下发** `ProcessingState.completed`,
+  /// 于是 `onComplete` 永不被调用 —— 表现就是「无损播完不自动切下一首,
+  /// 顺序/随机/循环模式全部失效」,但手动点上下首却正常(那是主动切歌,不走完成事件)。
+  /// 这里用「播放位置逼近结尾」兜底触发 onComplete,且仅对无损启用,不影响 MP3 正常逻辑。
+  bool losslessFallback = false;
+
+  /// 位置兜底触发完成的内部状态(避免重复触发)
+  bool _endFired = false;
+  Duration? _lastPos;
+  DateTime? _lastAdvanceAt;
+
   MusicAudioHandler() {
     // 恢复上次选中的音效(存储此时已初始化)
     AudioEffects.instance.loadSaved();
@@ -88,6 +101,37 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
         onComplete?.call();
       }
     });
+
+    // 位置兜底:FLAC 不下发 completed 时,用「位置逼近结尾」补触发 onComplete。
+    // 两种命中:① 位置到达结尾前 600ms;② 已在 95% 处且 1.5s 内位置没推进
+    // (兼容时长被高估 / 尾部静音导致永远到不了真正的结尾)。
+    player.positionStream.listen((pos) {
+      if (!losslessFallback) return;
+      final dur = player.duration;
+      if (dur == null || dur <= Duration.zero) {
+        _endFired = false;
+        _lastPos = null;
+        _lastAdvanceAt = null;
+        return;
+      }
+      if (_lastPos == null || pos > _lastPos!) {
+        _lastPos = pos;
+        _lastAdvanceAt = DateTime.now();
+      }
+      final nearEnd = pos >= dur - const Duration(milliseconds: 600);
+      final stuckNearEnd = pos >= dur * 95 ~/ 100 &&
+          _lastAdvanceAt != null &&
+          DateTime.now().difference(_lastAdvanceAt!) >
+              const Duration(milliseconds: 1500);
+      if (player.playing && (nearEnd || stuckNearEnd) && !_endFired) {
+        _endFired = true;
+        debugPrint('[audio] FLAC 位置兜底触发 onComplete '
+            'pos=${pos.inSeconds}s dur=${dur.inSeconds}s');
+        onComplete?.call();
+      } else if (pos < dur - const Duration(seconds: 1)) {
+        _endFired = false;
+      }
+    });
   }
 
   /// 载入歌曲(不自动播放)
@@ -96,6 +140,10 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// 本地文件必须用 setFilePath,否则 just_audio 会当成 URL 解析而失败。
   Future<void> loadSong(Song song) async {
     debugPrint('[audio] loadSong #${song.id} 「${song.name}」');
+    // 新歌:清掉上一首的位置兜底状态,避免误判「已到结尾」
+    _endFired = false;
+    _lastPos = null;
+    _lastAdvanceAt = null;
     mediaItem.add(_toMediaItem(song));
 
     // ★ Windows 必须先对齐播放状态再换源(见 _alignBeforeLoad 的说明)。
