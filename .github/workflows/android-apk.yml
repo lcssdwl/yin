@@ -1,15 +1,9 @@
 name: 安卓 APK
 
-# 什么时候跑:
-#   - 手动:仓库 Actions 页 → 选本工作流 → Run workflow
-#   - 自动:推到 main 且 flutter_app 下有改动时
+# 只手动跑:仓库 Actions 页 → 选本工作流 → 右上角 Run workflow
+# (故意不加 push 触发:每次 push 都自动编译太耗额度,要打包时手动点一次即可)
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'flutter_app/**'
-      - '.github/workflows/android-apk.yml'
 
 jobs:
   build-apk:
