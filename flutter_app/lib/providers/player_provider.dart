@@ -1014,34 +1014,6 @@ class PlayerProvider extends ChangeNotifier {
     }
   }
 
-  /// 用户把进度条拖到了最末尾 —— 直接按「本曲播放结束」处理
-  ///
-  /// 为什么需要这个方法:
-  /// seek 到**精确的 duration** 时,播放器(ExoPlayer)会停在末尾,
-  /// 但**不会**触发 processingState = completed,
-  /// 于是 _onComplete 永远不被调用 —— 界面表现就是「拖到最后一秒卡住」。
-  /// 所以这里不等播放器事件,自己按结束逻辑走一遍。
-  Future<void> seekToEnd() async {
-    debugPrint('[player] seekToEnd → 当作「跳过本首」(mode=$_mode)');
-
-    // 注意:这里不要先 seek(Duration.zero)。
-    // 那会把播放位置拽回 0,播放器立刻从开头播出一声,
-    // 听起来就像「拖到末尾反而响了一下」。
-
-    // 单曲循环:从头重播
-    if (_mode == PlayMode.single) {
-      unawaited(_replayCurrent());
-      return;
-    }
-
-    // 手动拖到末尾 = 主动跳过这首歌,**直接切下一首**。
-    //
-    // 以前这里走 _onComplete(),而顺序模式下「最后一首」会被判定为
-    // 「播完了」直接暂停 —— 表现就是「拖到最后就卡住,不动了」。
-    // 手动操作本来就允许回到第一首(和点「下一首」一致),所以不走那条分支。
-    await next();
-  }
-
   // ==================== 定时关闭 ====================
 
   /// 定时关闭(单位:分钟),到点自动暂停

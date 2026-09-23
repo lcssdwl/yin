@@ -418,18 +418,7 @@ class _PlayerPageState extends State<PlayerPage> {
                           final ms = (v * totalMs).toInt();
                           setState(() => _dragValue = null);
 
-                          // 拖到最末尾(距结尾 200ms 以内)当作「本曲结束」:
-                          //   单曲循环 → 从头重新开始
-                          //   顺序 / 随机 → 切歌
-                          //
-                          // 不能只靠 seek 到末尾触发 completed —— 实测播放器
-                          // 停在末尾却不发 completed 事件,会卡住不动。
-                          if (totalMs > 0 && ms >= totalMs - 200) {
-                            debugPrint('[player] seek -> end');
-                            await player.seekToEnd();
-                            return;
-                          }
-
+                          // 普通拖动:直接 seek 到目标位置,由原生 completed 负责播到结尾自动切歌。
                           debugPrint(
                               '[player] seek -> ${(ms / 1000).toStringAsFixed(1)}s');
                           await player.seek(Duration(milliseconds: ms));
