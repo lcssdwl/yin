@@ -14,6 +14,13 @@ import 'package:path_provider/path_provider.dart';
 import '../log/app_log.dart';
 import '../storage/storage_service.dart';
 
+/// 脱敏:去掉错误里的服务器地址与端口,避免日志泄露内网 IP。
+String _redactAddr(String s) {
+  return s
+      .replaceAll(RegExp(r', address = [^,)]+'), '')
+      .replaceAll(RegExp(r', port = \d+'), '');
+}
+
 /// 音频本地缓存(加密存储)
 ///
 /// 策略:**边播边存 + AES-256-GCM 加密(原生硬件加速)**
@@ -335,7 +342,7 @@ class AudioCache {
       await _encryptTo(part, target, md5, quality);
       await part.delete();
 
-      AppLog.add('[cache] 已加密缓存 $tag → ${target.path}');
+      AppLog.add('[cache] 已加密缓存 $tag');
 
       lastError = '';
       _setProgress('');
@@ -486,7 +493,7 @@ class AudioCache {
         AppLog.add('[cache] $tag 下载完成 ${(size / 1024 / 1024).toStringAsFixed(2)}MB');
         return true;
       } catch (e) {
-        lastError = '下载失败(第 ${attempt + 1} 次): $e';
+        lastError = '下载失败(第 ${attempt + 1} 次): ${_redactAddr(e.toString())}';
         AppLog.add('[cache] $tag $lastError');
         // 清掉半截文件,下次重试从头来
         try {
