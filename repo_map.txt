@@ -1,0 +1,18 @@
+仓库对应关系（务必分清，不要混淆！）
+
+1. 后端（Go 服务）：仓库名 yunyun-server
+   - 本地路径：c:/Users/Administrator/Desktop/yin/go_backend
+   - 关键代码：internal/library/library.go
+   - 部署产物：yunyun-server.exe / yunyun-server-linux（需 go build 编译）
+
+2. 前端 App（Flutter）：仓库名 yin
+   - 本地路径：c:/Users/Administrator/Desktop/yin
+   - 关键代码：
+     - lib/core/audio/audio_handler.dart
+     - lib/providers/player_provider.dart
+
+备注：
+- 两个仓库相互独立，各自 git 提交/推送。
+- 播放器端已回退为纯原生 ProcessingState.completed -> onComplete，无客户端兜底。
+- 无损不自动切歌的修复放在后端：把原样复制的 FLAC 重新编码为标准 16bit/44.1k FLAC。
+- 本地无 Go 工具链，后端源码改完需在能编译的机器上 go build 出二进制再部署。
