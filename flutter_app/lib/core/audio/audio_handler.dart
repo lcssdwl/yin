@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../data/models/song.dart';
+import 'audio_cache.dart';
 import 'audio_effect.dart';
 
 /// 音频服务
@@ -99,6 +100,9 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
           'pos=${player.position.inSeconds}s dur=${player.duration?.inSeconds}s');
 
       if (state == ProcessingState.completed) {
+        // 自然播完:顺手清掉刚播完这首歌的解密明文(tmp 仅留正在用的那一份,
+        // 播完即删,避免明文常驻磁盘;切到下一首时 localPath 也会再清一次)。
+        unawaited(AudioCache.clearTemp());
         onComplete?.call();
       }
     });
@@ -205,6 +209,10 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> stop() async {
     await player.stop();
+    // 停止播放后,删除本次解密出来的明文临时文件(tmp 里只保留正在用的,
+    // 已停播的明文及时清掉,避免明文常驻磁盘)。
+    // 下一首开始播放时 localPath 也会先清掉其它明文,这里兜底收尾。
+    unawaited(AudioCache.clearTemp());
     await super.stop();
   }
 

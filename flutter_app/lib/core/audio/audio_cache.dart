@@ -23,7 +23,8 @@ import '../storage/storage_service.dart';
 ///
 /// 存储结构:
 ///   audio_cache/{md5}_{quality}.enc   ← 加密缓存(12 字节 nonce + 密文 + 16 字节 MAC 标签)
-///   audio_cache/tmp/{md5}_{quality}   ← 播放用临时明文(App 启动时清理残留)
+///   audio_cache/tmp/{md5}_{quality}   ← 播放用临时明文(每次播放前清掉其它明文,
+///                                          保证 tmp 同一时刻只有当前这一份)
 ///
 /// **缓存键用音频 MD5,不用歌曲 ID**:
 ///   ID 是后端的自增序号,重新扫描 / 重建库之后会变。一旦变了,
@@ -221,6 +222,11 @@ class AudioCache {
       }
 
       final plain = File(await _tmpPath(md5, quality));
+
+      // 播放本地缓存前,先把 tmp 里**其它**明文全清掉(保护当前目标路径),
+      // 保证播放期间 tmp 同时只有当前这一份明文 —— 上一首的明文在此被删除
+      // (即「播放后删除解密明文」:切歌/重播时旧明文不再残留)。
+      await clearTemp(protectPath: plain.path);
 
       // 已解密过且比加密文件新 → 直接用,不必重复解密
       if (await plain.exists()) {
