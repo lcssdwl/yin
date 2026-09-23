@@ -817,7 +817,10 @@ class PlayerProvider extends ChangeNotifier {
       AppLog.add('[player] 无音频指纹,跳过缓存 #${song.id} 音质=$_quality');
       return;
     }
-    unawaited(AudioCache.prefetch(key.key, key.value, song.playUrl));
+    // 下载地址必须和缓存键(音质)严格对应:用 urlForQuality 取该音质专用地址,
+    // 不能用 playUrl(它优先返回 song.url / url320,可能和 key.value 不是同一档,
+    // 导致「下的是 320、却用 md5Flac 校验」→ MD5 永远不符)。
+    unawaited(AudioCache.prefetch(key.key, key.value, song.urlForQuality(key.value)));
   }
 
   /// 联网取播放地址;失败退回原地址(不阻塞,由上层决定能否播)
