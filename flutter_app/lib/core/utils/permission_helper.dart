@@ -13,12 +13,8 @@ class PermissionHelper {
   static Future<void> requestOnStart() async {
     if (!Platform.isAndroid) return;
 
-    // 通知权限(Android 13+):缺失则不显示播放通知
+    // 仅申请通知权限(Android 13+):缺失则不显示播放通知
     await Permission.notification.request();
-
-    // 本地音乐读取:Android 13+ 用 audio,12 及以下用 storage
-    await Permission.audio.request();
-    await Permission.storage.request();
   }
 
   /// 仅申请通知权限,返回是否获得

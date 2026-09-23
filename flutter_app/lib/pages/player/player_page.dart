@@ -36,6 +36,10 @@ class _PlayerPageState extends State<PlayerPage> {
   /// 进度条拖动中的值(null = 未拖动,跟随播放进度)
   double? _dragValue;
 
+  /// 是否展开完整歌词(默认 false:转盘居中、下方只显示一行当前歌词;
+  /// 点击转盘切换为完整歌词,再次点击或点歌词收回)
+  bool _showLyrics = false;
+
   /// 已提示过的错误内容(避免重复弹)
   String? _shownError;
 
@@ -106,20 +110,29 @@ class _PlayerPageState extends State<PlayerPage> {
               children: [
                 _buildAppBar(context, song),
                 Expanded(
-                  child: Column(
-                    children: [
-                      // 唱片(缩小,始终显示在上方)
-                      const SizedBox(height: 8),
-                      RotatingCover(
-                        imageUrl: song.coverUrl,
-                        size: 150,
-                        rotating: player.isPlaying,
-                      ),
-                      const SizedBox(height: 4),
-                      // 歌词(下方常驻,不用点击切换就直接显示)
-                      Expanded(child: _buildLyricView(player)),
-                    ],
-                  ),
+                  child: _showLyrics
+                      // 完整歌词:点任意处收回转盘视图
+                      ? GestureDetector(
+                          onTap: () => setState(() => _showLyrics = false),
+                          child: _buildLyricView(player),
+                        )
+                      // 转盘视图:唱片居中,下方只显示一行当前歌词
+                      : Column(
+                          children: [
+                            const Spacer(),
+                            GestureDetector(
+                              onTap: () => setState(() => _showLyrics = true),
+                              child: RotatingCover(
+                                imageUrl: song.coverUrl,
+                                size: 200,
+                                rotating: player.isPlaying,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            _buildCurrentLyricLine(player),
+                            const Spacer(),
+                          ],
+                        ),
                 ),
                 _buildControls(context, player, song),
               ],
@@ -369,6 +382,42 @@ class _PlayerPageState extends State<PlayerPage> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: rows,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 转盘视图下的一行当前歌词(随播放进度滚动到当前行)
+  Widget _buildCurrentLyricLine(PlayerProvider player) {
+    final lines = player.lyricLines;
+    if (lines.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return StreamBuilder<Duration>(
+      stream: player.positionStream,
+      initialData: Duration.zero,
+      builder: (context, snapshot) {
+        final position = snapshot.data ?? Duration.zero;
+        final index = LyricsParser.indexAt(lines, position);
+        final text = lines[index].text;
+
+        return GestureDetector(
+          onTap: () => setState(() => _showLyrics = true),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              text,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+                height: 1.4,
+              ),
             ),
           ),
         );

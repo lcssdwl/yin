@@ -62,15 +62,13 @@ Future<void> main() async {
   unawaited(AudioCache.purgeLegacy());
   print('BOOT: audio cache legacy purge started');
 
-  // 申请通知/存储权限
-  // 关键:必须在 AudioService 初始化之前,否则 Android 13+ 不显示播放通知
-  try {
-    await PermissionHelper.requestOnStart()
-        .timeout(const Duration(seconds: 20));
-    print('BOOT: permission ok');
-  } catch (_) {
-    print('BOOT: permission failed');
-  }
+  // 启动时申请通知权限(Android 13+ 缺失则不显示播放通知)。
+  // 不在冷启动原生交接阶段直接弹窗 —— 云机/部分定制 ROM 在那一刻弹权限会直接闪退,
+  // 所以改到「首帧之后」再申请:应用一打开就弹,既满足启动即申请,又避开冷启动瞬间。
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(PermissionHelper.requestOnStart());
+  });
+  print('BOOT: schedule notification permission request after first frame');
 
   // 关键:通知必须带一个实色 —— Android 13/14 的 SystemUI 会拿 notification.color
   // 给媒体按钮图标着色,默认 0 就是透明(按钮能点但看不见)。
