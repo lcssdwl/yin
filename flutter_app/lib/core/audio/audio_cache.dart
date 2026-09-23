@@ -90,13 +90,7 @@ class AudioCache {
     Future.microtask(() => progress.value = text);
   }
 
-  /// 每段大小(多线程分块下载,避免一个超长连接被隧道/网关掐断)
-  static const int _chunkSize = 2 * 1024 * 1024;
-
-  /// 下载并发连接数(同时下几段)
-  static const int _concurrency = 4;
-
-  /// 单块最大重试次数
+  /// 单文件下载最大重试次数(整文件失败从头重下;单线程顺序下载)
   static const int _maxRetry = 3;
 
   /// 待下载队列上限(只是排队上限,不是缓存曲数上限;缓存曲数不设限)
@@ -452,174 +446,56 @@ class AudioCache {
 
   // ==================== 下载 ====================
 
-  /// **多线程**分块下载到 [part]
+  /// 单线程整文件下载到 [part]
   ///
-  /// 单连接下整首歌(几十 MB)受限于一条 TCP 连接,而且长连接很容易被
-  /// 隧道 / 网关掐断 —— 掐断就是整首白下。
-  /// 这里同时开 [_concurrency] 条连接各下一段(Range),最后按序合并:
-  ///   * 速度通常是单连接的数倍
-  ///   * 某一段失败只重下那一段(最多 [_maxRetry] 次),不牵连其它段
+  /// 之前的多线程分块(Range)下载在并发合并时会把文件拼坏 —— 尤其 FLAC 大文件,
+  /// 残留的分段或乱序合并会导致「文件损坏 / MD5 不符」,缓存永远写不下来。
+  /// 改为单连接顺序下载:内容和后端完全一致,MD5 必然对得上。
+  /// 整文件失败最多重试 [_maxRetry] 次(从头重下),不分段、不并发。
   static Future<bool> _downloadTo(String url, File part, String tag) async {
     final dio = Dio(
       BaseOptions(
         connectTimeout: const Duration(seconds: 15),
-        receiveTimeout: const Duration(seconds: 60),
+        receiveTimeout: const Duration(minutes: 5),
         sendTimeout: const Duration(seconds: 15),
         headers: const {'Accept-Encoding': 'identity'},
         followRedirects: true,
       ),
     );
 
-    try {
-      // 先建空文件(合并阶段才写入)
-      if (await part.exists()) {
-        await part.delete();
-      }
-      final init = await part.open(mode: FileMode.write);
-      await init.close();
-
-      // 探测总大小;服务端不支持 Range 时这一步会顺带把整首下完(返回 -1)
-      final total = await _probe(dio, url, part);
-      if (total == null) return false;
-      if (total == -1) return true;
-
-      // 切段:小文件少开几条连接,别为了几 MB 开一堆连接
-      final workers = total >= 8 * 1024 * 1024 ? _concurrency : 2;
-      final chunk = max(_chunkSize, (total / workers).ceil());
-
-      final ranges = <List<int>>[];
-      var s = 0;
-      while (s < total) {
-        final e = min(s + chunk - 1, total - 1);
-        ranges.add(<int>[s, e]);
-        s = e + 1;
-      }
-
-      AppLog.add('[cache] $tag 多线程下载: ${ranges.length} 段 / '
-          '${(total / 1024 / 1024).toStringAsFixed(1)}MB');
-
-      // 并发下载(各写各的段文件:Dart 无法多句柄随机写同一文件,故先分段后合并)
-      final results = await Future.wait(
-        ranges.asMap().entries.map(
-              (e) => _downloadChunk(
-                dio,
-                url,
-                '${part.path}.${e.key}',
-                e.value[0],
-                e.value[1],
-              ),
-            ),
-      );
-
-      if (results.any((r) => !r)) {
-        await _cleanupChunks(part, ranges.length);
-        return false;
-      }
-
-      // 按序合并成完整文件
-      final out = await part.open(mode: FileMode.write);
-      try {
-        for (var i = 0; i < ranges.length; i++) {
-          final seg = File('${part.path}.$i');
-          await out.writeFrom(await seg.readAsBytes());
-        }
-      } finally {
-        await out.close();
-      }
-
-      await _cleanupChunks(part, ranges.length);
-
-      final size = await part.length();
-      if (size != total) {
-        lastError = '大小不符: 实下 $size / 应为 $total';
-        AppLog.add('[cache] $tag $lastError');
-        return false;
-      }
-
-      return true;
-    } catch (e) {
-      lastError = '下载异常: $e';
-      AppLog.add('[cache] $tag $lastError');
-      return false;
-    }
-  }
-
-  /// 探测文件总大小;服务端不支持 Range 时顺带把整首写进 [part] 并返回 -1
-  static Future<int?> _probe(Dio dio, String url, File part) async {
-    RandomAccessFile? raf;
-
-    try {
-      final res = await dio.get<ResponseBody>(
-        url,
-        options: Options(
-          responseType: ResponseType.stream,
-          headers: const {'Range': 'bytes=0-0'},
-        ),
-      );
-
-      final cr = res.headers.value('content-range');
-      final m = cr == null ? null : RegExp(r'/(\d+)\s*$').firstMatch(cr);
-      if (cr != null && m != null) {
-        await res.data!.stream.drain(); // 只要响应头,这 1 字节丢掉
-        return int.tryParse(m.group(1)!);
-      }
-
-      // 不支持 Range:这次响应就是整首,直接落盘
-      raf = await part.open(mode: FileMode.write);
-      await _pipe(res.data!.stream, raf);
-      return -1;
-    } catch (e) {
-      lastError = '探测大小失败: $e';
-      AppLog.add('[cache] $lastError');
-      return null;
-    } finally {
-      await raf?.close();
-    }
-  }
-
-  /// 下载 [start, end] 这一段到独立段文件(失败自动重试)
-  static Future<bool> _downloadChunk(
-    Dio dio,
-    String url,
-    String segPath,
-    int start,
-    int end,
-  ) async {
     for (var attempt = 0; attempt < _maxRetry; attempt++) {
-      RandomAccessFile? raf;
-
       try {
+        AppLog.add('[cache] $tag 单线程下载(第 ${attempt + 1}/${_maxRetry} 次)');
         final res = await dio.get<ResponseBody>(
           url,
-          options: Options(
-            responseType: ResponseType.stream,
-            headers: {'Range': 'bytes=$start-$end'},
-          ),
+          options: Options(responseType: ResponseType.stream),
         );
+        final raf = await part.open(mode: FileMode.write);
+        try {
+          await _pipe(res.data!.stream, raf);
+        } finally {
+          await raf.close();
+        }
 
-        raf = await File(segPath).open(mode: FileMode.write);
-        await _pipe(res.data!.stream, raf);
+        final size = await part.length();
+        if (size <= 0) {
+          lastError = '下载为空';
+          AppLog.add('[cache] $tag $lastError');
+          return false;
+        }
+        AppLog.add('[cache] $tag 下载完成 ${(size / 1024 / 1024).toStringAsFixed(2)}MB');
         return true;
       } catch (e) {
-        lastError = '分段 $start-$end 失败(第 ${attempt + 1} 次): $e';
-        AppLog.add('[cache] $lastError');
+        lastError = '下载失败(第 ${attempt + 1} 次): $e';
+        AppLog.add('[cache] $tag $lastError');
+        // 清掉半截文件,下次重试从头来
+        try {
+          if (await part.exists()) await part.delete();
+        } catch (_) {}
         await Future<void>.delayed(Duration(seconds: attempt + 1));
-      } finally {
-        await raf?.close();
       }
     }
-
     return false;
-  }
-
-  /// 清理临时段文件
-  static Future<void> _cleanupChunks(File part, int count) async {
-    for (var i = 0; i < count; i++) {
-      try {
-        final f = File('${part.path}.$i');
-        if (await f.exists()) await f.delete();
-      } catch (_) {}
-    }
   }
 
   /// 把响应流写进文件(边收边写,不整包驻留内存)
