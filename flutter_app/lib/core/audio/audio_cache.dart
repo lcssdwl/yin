@@ -282,7 +282,7 @@ class AudioCache {
       return false;
     }
     if (url.isEmpty || !url.startsWith('http')) {
-      AppLog.add('[cache] skip ${_tag(md5, quality)}: url 不是 http($url)');
+      AppLog.add('[cache] skip ${_tag(md5, quality)}: url 不是 http');
       return false;
     }
 
@@ -464,8 +464,8 @@ class AudioCache {
     );
 
     for (var attempt = 0; attempt < _maxRetry; attempt++) {
-      try {
-        AppLog.add('[cache] $tag 单线程下载(第 ${attempt + 1}/${_maxRetry} 次)');
+    try {
+      AppLog.add('[cache] $tag 单线程下载(第 ${attempt + 1}/${_maxRetry} 次)');
         final res = await dio.get<ResponseBody>(
           url,
           options: Options(responseType: ResponseType.stream),

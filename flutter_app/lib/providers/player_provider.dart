@@ -837,8 +837,7 @@ class PlayerProvider extends ChangeNotifier {
         AppLog.add('[player] 取流成功 #${song.id} 请求音质=$_quality '
             '实际音质=${info.actualQuality.isEmpty ? _quality : info.actualQuality} '
             '回退=${info.fallback} '
-            'md5=${info.md5.isEmpty ? "(无)" : info.md5} '
-            'url=${_shortUrl(info.url)}');
+            'md5=${info.md5.isEmpty ? "(无)" : info.md5}');
 
         // 实际档位:新后端会明确下发 actual_quality;老后端没有这个字段时,
         // 用同一套兜底规则按列表下发的分音质地址推算,保证播放页显示的是真实档位。
@@ -906,12 +905,6 @@ class PlayerProvider extends ChangeNotifier {
       }
     }
     return song;
-  }
-
-  /// 日志里只留域名+路径,避免把带签名的超长 query 整段写进去
-  String _shortUrl(String url) {
-    final i = url.indexOf('?');
-    return i < 0 ? url : '${url.substring(0, i)}?…';
   }
 
   /// 地址里是否带着「当前登录令牌」

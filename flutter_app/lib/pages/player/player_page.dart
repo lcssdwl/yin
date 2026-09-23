@@ -88,9 +88,9 @@ class _PlayerPageState extends State<PlayerPage> {
       AppLog.add(
         '[player] 打开播放器 #${song.id} ${song.name} '
         '音质=${player.quality} '
-        '封面=${song.cover.isEmpty ? "(空)" : song.cover} '
+        '封面=${song.cover.isEmpty ? "(空)" : "(有)"} '
         '时长=${song.duration}s '
-        '队列原始地址=${song.playUrl.isEmpty ? "(空,待联网解析)" : song.playUrl}',
+        '队列原始地址=${song.playUrl.isEmpty ? "(空,待联网解析)" : "(有)"}',
       );
     }
 
@@ -185,7 +185,7 @@ class _PlayerPageState extends State<PlayerPage> {
                 errorBuilder: (_, __, error) {
                   if (_loggedCoverError != cover) {
                     _loggedCoverError = cover;
-                    AppLog.add('[player] 封面加载失败 #${song.id} $cover → $error');
+                    AppLog.add('[player] 封面加载失败 #${song.id}');
                   }
                   return const SizedBox.shrink();
                 },
