@@ -31,7 +31,7 @@ class PlayerProvider extends ChangeNotifier {
 
   List<Song> _queue = [];
   int _currentIndex = -1;
-  PlayMode _mode = PlayMode.sequence;
+  PlayMode _mode = PlayMode.listLoop; // 默认列表循环(播完最后一首自动回第一首)
   bool _loading = false;
 
   /// 切歌代号:每发起一次切歌 +1
