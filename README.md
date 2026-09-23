@@ -133,9 +133,9 @@ flutter run                                   # 调试运行
 
 ## 提交历史
 
-在 GitHub 仓库页面点 **Commits（提交）** 按钮即可查看提交历史，对应路径为 `../commits/main`（将 `main` 换成实际默认分支名）。
+在 GitHub 仓库页面点 **Commits（提交）** 按钮即可查看提交历史，对应路径为 [`../commits/main`](https://github.com/LCS6-SDWL/yin/commits/main)（将 `main` 换成实际默认分支名）。
 
 本项目的代码分布在两个独立仓库，提交历史需分别查看：
 
-- App（本仓库 `yin`）：`../commits/main`
-- 后端（`yunyun-server`）：`../commits/main`
+- App（本仓库 `yin`）：[`../commits/main`](https://github.com/LCS6-SDWL/yin/commits/main)
+- 后端（`yunyun-server`）：[`../commits/main`](https://github.com/LCS6-SDWL/yunyun-server/commits/main)
