@@ -138,6 +138,9 @@ class PlayerProvider extends ChangeNotifier {
     _handler.onSkipNext = next;
     _handler.onSkipPrevious = previous;
     _handler.onComplete = _onComplete;
+    // 收藏:把切换/查询能力注入音频后台服务,供通知栏心形按钮调用
+    _handler.onToggleFavorite = toggleFavoriteCurrent;
+    _handler.isFavorite = isFavorite;
     _handler.onPlaybackError = _onPlaybackError;
 
     // 播放 / 缓冲状态:刷新 UI(通知栏由 audio_service 的 MediaSession 自动维护)
@@ -162,10 +165,16 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   void _onAuthChanged() {
-    if (_auth.isLoggedIn && _qualityLoginHint != null) {
-      _qualityLoginHint = null;
-      notifyListeners();
+    if (_auth.isLoggedIn) {
+      // 登录后立即从云端刷新收藏集合,避免继续显示游客态的本地收藏
+      if (_qualityLoginHint != null) _qualityLoginHint = null;
+      unawaited(loadFavorites());
+    } else {
+      // 退出登录:把当前云端收藏快照写回本地,
+      // 保证「退出使用本地」依旧可用(本地数据不再被登录合并时清空)
+      unawaited(StorageService.setLocalFavorites(_favoriteIds.toList()));
     }
+    notifyListeners();
   }
 
   void _setBuffering(bool value) {
@@ -1270,6 +1279,8 @@ class PlayerProvider extends ChangeNotifier {
       _favoriteIds.addAll(StorageService.localFavorites);
     }
     notifyListeners();
+    // 加载完收藏集合后,同步通知栏心形图标状态
+    _handler.refreshControls();
   }
 
   /// 切换收藏,返回切换后的状态
@@ -1289,6 +1300,8 @@ class PlayerProvider extends ChangeNotifier {
       _favoriteIds.remove(songId);
     }
     notifyListeners();
+    // 通知栏收藏图标(空心/实心)同步刷新
+    _handler.refreshControls();
     return result;
   }
 

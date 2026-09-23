@@ -142,6 +142,11 @@ class StorageService {
     await _local.put(AppConstants.keyLocalFavorites, list);
   }
 
+  /// 覆盖式写入本地收藏(退出登录时把云端收藏快照写回本地,供离线查看)
+  static Future<void> setLocalFavorites(List<int> ids) async {
+    await _local.put(AppConstants.keyLocalFavorites, ids);
+  }
+
   // ==================== 游客:本地历史 ====================
 
   /// 元素:{songId, playTime}
@@ -199,15 +204,6 @@ class StorageService {
       list[index]['songs'] = songs;
       await _local.put(AppConstants.keyLocalPlaylists, list);
     }
-  }
-
-  // ==================== 合并后清理 ====================
-
-  /// 登录合并成功后调用,清空本地游客数据
-  static Future<void> clearLocalData() async {
-    await _local.delete(AppConstants.keyLocalFavorites);
-    await _local.delete(AppConstants.keyLocalHistory);
-    await _local.delete(AppConstants.keyLocalPlaylists);
   }
 
   /// 退出登录时清理用户信息(保留游客本地数据)

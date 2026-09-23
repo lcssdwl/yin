@@ -29,6 +29,19 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// 播放出错回调(常见:24bit FLAC 等本机解码器不支持的格式)
   VoidCallback? onPlaybackError;
 
+  /// 收藏切换回调(由 PlayerProvider 注入)
+  Future<void> Function()? onToggleFavorite;
+
+  /// 指定歌曲是否收藏(由 PlayerProvider 注入)
+  bool Function(int)? isFavorite;
+
+  /// 当前播放歌曲的 id(从 mediaItem.extras 取)
+  int? get _currentSongId {
+    final item = mediaItem.value;
+    if (item == null) return null;
+    return item.extras?['songId'] as int?;
+  }
+
   Timer? _ticker;
   int _lastTickSecond = -1;
 
@@ -64,7 +77,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   void _listen() {
     player.playbackEventStream.listen(
-      _broadcastState,
+      (_) => _emitPlaybackState(),
       onError: (Object e, StackTrace st) {
         debugPrint('[audio] playback error: $e');
 
@@ -205,15 +218,29 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     onSkipPrevious?.call();
   }
 
+  /// 构造通知栏控件列表:上一首 / 播放暂停 / 下一首 / 收藏(心形,放最右边)
+  List<MediaControl> _buildControls() {
+    final songId = _currentSongId;
+    final fav = songId != null && (isFavorite?.call(songId) ?? false);
+    return [
+      MediaControl.skipToPrevious,
+      if (player.playing) MediaControl.pause else MediaControl.play,
+      MediaControl.skipToNext,
+      MediaControl.custom(
+        androidIcon: fav
+            ? 'drawable/audio_service_heart_filled'
+            : 'drawable/audio_service_heart',
+        label: '收藏',
+        name: 'favorite',
+      ),
+    ];
+  }
+
   /// 广播播放状态给系统(通知栏/锁屏)
-  void _broadcastState(PlaybackEvent event) {
+  void _emitPlaybackState() {
     playbackState.add(
       playbackState.value.copyWith(
-        controls: [
-          MediaControl.skipToPrevious,
-          if (player.playing) MediaControl.pause else MediaControl.play,
-          MediaControl.skipToNext,
-        ],
+        controls: _buildControls(),
         systemActions: const {
           MediaAction.seek,
           MediaAction.seekForward,
@@ -233,6 +260,20 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
         speed: player.speed,
       ),
     );
+  }
+
+  /// 在收藏状态变化后主动刷新通知栏(含收藏图标)
+  void refreshControls() => _emitPlaybackState();
+
+  /// 通知栏自定义动作(如收藏)的入口
+  @override
+  Future<dynamic> customAction(String action, [Map<String, dynamic>? extras]) async {
+    if (action == 'favorite') {
+      await onToggleFavorite?.call();
+      _emitPlaybackState(); // 刷新收藏图标(空心/实心)
+      return;
+    }
+    return super.customAction(action, extras);
   }
 
   /// 强制激活 MediaSession

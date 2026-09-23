@@ -126,7 +126,9 @@ class UserRepository {
 
     try {
       await _client.post(Api.userSync, data: payload);
-      await StorageService.clearLocalData();
+      // 注意:合并后**不再清空本地游客数据**。
+      // 本地数据保留作为离线兜底:登录后用云端、退出后用本地;
+      // 重复条目由后端 /user/sync 去重,前端无需操心。
       return true;
     } catch (_) {
       return false;

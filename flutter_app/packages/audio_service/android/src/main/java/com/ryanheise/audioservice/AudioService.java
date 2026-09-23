@@ -65,6 +65,9 @@ public class AudioService extends MediaBrowserServiceCompat {
     public static final String CUSTOM_ACTION_STOP = "com.ryanheise.audioservice.action.STOP";
     public static final String CUSTOM_ACTION_FAST_FORWARD = "com.ryanheise.audioservice.action.FAST_FORWARD";
     public static final String CUSTOM_ACTION_REWIND = "com.ryanheise.audioservice.action.REWIND";
+    // 补丁:通知栏自定义动作(如收藏)的广播 action 与携带动作名的 extra key
+    public static final String CUSTOM_ACTION_BROADCAST = "com.ryanheise.audioservice.CUSTOM_ACTION";
+    public static final String EXTRA_CUSTOM_ACTION_NAME = "com.ryanheise.audioservice.EXTRA_CUSTOM_ACTION_NAME";
     private static final String BROWSABLE_ROOT_ID = "root";
     private static final String RECENT_ROOT_ID = "recent";
     // See the comment in onMediaButtonEvent to understand how the BYPASS keycodes work.
@@ -314,7 +317,13 @@ public class AudioService extends MediaBrowserServiceCompat {
 
         configure(new AudioServiceConfig(getApplicationContext()));
 
-        mediaSession.setFlags(MediaSessionCompat.FLAG_HANDLES_QUEUE_COMMANDS);
+        // 补丁:显式带上媒体按钮/传输控制 flag。
+        // iQOO/OriginOS 的原子随身听会按 MediaSession 的 flag 判定是否属于
+        // "可控制的媒体会话",只挂 QUEUE_COMMANDS 时它可能直接忽略本会话,
+        // 导致我们的 App 登不上状态栏的媒体播放器面板。
+        mediaSession.setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS
+                | MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
+                | MediaSessionCompat.FLAG_HANDLES_QUEUE_COMMANDS);
         PlaybackStateCompat.Builder stateBuilder = new PlaybackStateCompat.Builder()
                 .setActions(AUTO_ENABLED_ACTIONS);
         mediaSession.setPlaybackState(stateBuilder.build());
@@ -437,7 +446,30 @@ public class AudioService extends MediaBrowserServiceCompat {
         if (resource.endsWith("audio_service_fast_forward")) return R.drawable.audio_service_fast_forward;
         if (resource.endsWith("audio_service_fast_rewind")) return R.drawable.audio_service_fast_rewind;
         if (resource.endsWith("audio_service_stop")) return R.drawable.audio_service_stop;
+        if (resource.endsWith("audio_service_heart")) return R.drawable.audio_service_heart;
+        if (resource.endsWith("audio_service_heart_filled")) return R.drawable.audio_service_heart_filled;
         return 0;
+    }
+
+    /**
+     * 补丁:为自定义动作(如收藏)构造一个通知栏按钮 Action。
+     * 点击通过广播(MediaButtonReceiver)回传,最终调用 onCustomAction(name)。
+     */
+    private NotificationCompat.Action createCustomActionNotificationAction(MediaControl control) {
+        int iconId = getResourceId(control.icon);
+        if (iconId == 0) iconId = fallbackIconId(control.icon);
+        Intent intent = new Intent(this, MediaButtonReceiver.class);
+        intent.setAction(CUSTOM_ACTION_BROADCAST);
+        if (control.customAction != null) {
+            intent.putExtra(EXTRA_CUSTOM_ACTION_NAME, control.customAction.name);
+        }
+        int flags = 0;
+        if (Build.VERSION.SDK_INT >= 23) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        int requestCode = control.customAction != null ? control.customAction.name.hashCode() : 0;
+        PendingIntent pi = PendingIntent.getBroadcast(this, requestCode, intent, flags);
+        return new NotificationCompat.Action(iconId, control.label, pi);
     }
 
     private boolean needCustomMediaControl(MediaControl control) {
@@ -530,6 +562,8 @@ public class AudioService extends MediaBrowserServiceCompat {
             final PlaybackStateCompat.CustomAction customAction = createCustomAction(control);
             if (customAction != null) {
                 customActions.add(customAction);
+                // 补丁:自定义动作(如收藏)也要作为通知栏按钮,点击经广播回传 onCustomAction
+                nativeActions.add(createCustomActionNotificationAction(control));
             } else {
                 nativeActions.add(createAction(control.icon, control.label, control.actionCode));
             }
@@ -576,15 +610,6 @@ public class AudioService extends MediaBrowserServiceCompat {
             stateBuilder.setExtras(extras);
         }
 
-        android.util.Log.d("YunYunNotif", "setState actions=0x"
-                + Long.toHexString(AUTO_ENABLED_ACTIONS | actionBits | controlBits)
-                + " (auto=0x" + Long.toHexString(AUTO_ENABLED_ACTIONS)
-                + " system=0x" + Long.toHexString(actionBits)
-                + " controls=0x" + Long.toHexString(controlBits) + ")"
-                + " nControls=" + controls.size()
-                + " playing=" + playing
-                + " state=" + getPlaybackState());
-
         mediaSession.setPlaybackState(stateBuilder.build());
         mediaSession.setRepeatMode(repeatMode);
         mediaSession.setShuffleMode(shuffleMode);
@@ -594,6 +619,18 @@ public class AudioService extends MediaBrowserServiceCompat {
             enterPlayingState();
         } else if (wasPlaying && !playing) {
             exitPlayingState();
+        }
+
+        // 补丁:只要会话处于「非 idle」状态(播放中,或已暂停但仍在放着这首),
+        // 就确保 MediaSession 处于 active。否则部分 ROM(iQOO/MIUI/OriginOS)在
+        // 暂停或起播后会把会话置为 inactive,系统媒体面板与通知栏的恢复键收不到
+        // 回调 → 暂停后点通知上的播放键「没反应」(App 内按钮直连 player 所以正常)。
+        // 原逻辑只在 playing 的 false→true 跳变时激活,而 Dart 端为制造该跳变
+        // 反复 toggle playing,反而造成通知图标抖动。改为:非 idle 且未 active 就
+        // 直接 setActive(true),不依赖跳变,也不扰动 playing 字段。
+        if (!mediaSession.isActive() && processingState != AudioProcessingState.idle) {
+            mediaSession.setActive(true);
+            mediaSession.setSessionActivity(contentIntent);
         }
 
         if (oldProcessingState != AudioProcessingState.idle && processingState == AudioProcessingState.idle) {
@@ -673,23 +710,6 @@ public class AudioService extends MediaBrowserServiceCompat {
         // 给媒体按钮图标着色,默认值 0 = 透明,表现就是「按钮能点但看不见」。
         // 这里兜底成不透明黑,确保就算 Dart 端没传也不会再出现透明按钮。
         builder.setColor(config.notificationColor != -1 ? config.notificationColor : 0xFF000000);
-        // 诊断日志:抓 logcat 时用它确认图标资源有没有解析到 / 颜色是多少
-        {
-            StringBuilder dbg = new StringBuilder("buildNotification actions=" + nativeActions.size());
-            for (NotificationCompat.Action a : nativeActions) {
-                dbg.append(" [iconId=").append(a.icon);
-                try {
-                    dbg.append(" res=").append(a.icon != 0 ? getResources().getResourceName(a.icon) : "NONE");
-                } catch (Exception e) {
-                    dbg.append(" res=?");
-                }
-                dbg.append("]");
-            }
-            dbg.append(" compact=").append(Arrays.toString(compactActionIndices));
-            dbg.append(" color=").append(Integer.toHexString(config.notificationColor));
-            dbg.append(" art=").append(artBitmap != null);
-            android.util.Log.d("YunYunNotif", dbg.toString());
-        }
 
         for (NotificationCompat.Action action : nativeActions) {
             builder.addAction(action);
@@ -739,13 +759,36 @@ public class AudioService extends MediaBrowserServiceCompat {
         int iconId = getResourceId(iconRes);
         if (iconId == 0) iconId = getResourceId("mipmap/ic_launcher");
         notificationBuilder.setSmallIcon(iconId);
-        android.util.Log.d("YunYunNotif", "smallIcon res=" + iconRes + " iconId=" + iconId);
         return notificationBuilder;
     }
 
     public void handleDeleteNotification() {
         if (listener == null) return;
         listener.onClose();
+    }
+
+    /**
+     * 补丁:把 MEDIA_BUTTON 意图直接派发给我们自己的 MediaSession 回调。
+     *
+     * 早期版本用 controller.dispatchMediaButtonEvent，但 frameworks 会按 keycode 过滤：
+     * 本机(OriginOS/iQOO)上 KEYCODE_MUTE(91, 即 BYPASS_PLAY) 会被系统吞掉、永远到不了
+     * onMediaButtonEvent，而 KEYCODE_MEDIA_RECORD(130, BYPASS_PAUSE) 能到。结果就是
+     * 「播放中暂停正常、暂停后点播放没反应」。
+     * 为彻底摆脱 keycode 依赖，这里直接调用回调的 onMediaButtonEvent，
+     * 保证无论播放/暂停态、哪个按键都能稳定送达 Dart 层。
+     */
+    public void dispatchMediaButton(Intent mediaButtonIntent) {
+        if (mediaSessionCallback == null) return;
+        mediaSessionCallback.onMediaButtonEvent(mediaButtonIntent);
+    }
+
+    /**
+     * 补丁:把通知栏自定义动作(如收藏)直接派发到 onCustomAction 回调,
+     * 进而回传给 Dart 端 AudioHandler.onCustomAction。
+     */
+    public void dispatchCustomAction(String name) {
+        if (mediaSessionCallback == null) return;
+        mediaSessionCallback.onCustomAction(name, new android.os.Bundle());
     }
 
 
@@ -766,9 +809,8 @@ public class AudioService extends MediaBrowserServiceCompat {
         if (notificationCreated) {
             try {
                 getNotificationManager().notify(NOTIFICATION_ID, buildNotification());
-                android.util.Log.d("YunYunNotif", "notify OK");
             } catch (Exception e) {
-                android.util.Log.e("YunYunNotif", "notify FAILED: " + e);
+                android.util.Log.e("AudioService", "notify FAILED: " + e);
             }
         }
     }
@@ -798,9 +840,8 @@ public class AudioService extends MediaBrowserServiceCompat {
         try {
             startForeground(NOTIFICATION_ID, buildNotification());
             notificationCreated = true;
-            android.util.Log.d("YunYunNotif", "startForeground OK");
         } catch (Exception e) {
-            android.util.Log.e("YunYunNotif", "startForeground FAILED: " + e);
+            android.util.Log.e("AudioService", "startForeground FAILED: " + e);
         }
     }
 
@@ -995,12 +1036,16 @@ public class AudioService extends MediaBrowserServiceCompat {
         @Override
         public void onPlay() {
             if (listener == null) return;
+            if (!mediaSession.isActive())
+                mediaSession.setActive(true);
             listener.onPlay();
         }
 
         @Override
         public void onPlayFromMediaId(final String mediaId, final Bundle extras) {
             if (listener == null) return;
+            if (!mediaSession.isActive())
+                mediaSession.setActive(true);
             listener.onPlayFromMediaId(mediaId, extras);
         }
 

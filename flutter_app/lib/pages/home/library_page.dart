@@ -174,8 +174,10 @@ class LibraryPageState extends State<LibraryPage> {
               list: _collectedPlaylists,
               isCreated: false,
             ),
-          ] else
+          ] else ...[
+            _guestFavoritesSection(context),
             _guestPlaylistEntry(context),
+          ],
 
           const Divider(height: 24),
 
@@ -980,6 +982,44 @@ class LibraryPageState extends State<LibraryPage> {
         text,
         style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
       ),
+    );
+  }
+
+  /// 游客态:本地「默认收藏」入口(免登录可用,数据存本地)
+  ///
+  /// 数据层(StorageService.localFavorites + PlayerProvider.toggleFavorite 游客分支)
+  /// 已经支持游客,这里只是在「我的」页把入口露出来 —— 登录前也能收藏、查看,
+  /// 登录后由 /user/sync 合并到云端(重复由后端去重)。
+  Widget _guestFavoritesSection(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 6, 0),
+          child: Row(
+            children: [
+              const Text(
+                '默认收藏',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${StorageService.localFavorites.length}',
+                style: TextStyle(fontSize: 12, color: theme.hintColor),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 144,
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            scrollDirection: Axis.horizontal,
+            children: [_favoritesCard(context)],
+          ),
+        ),
+      ],
     );
   }
 
