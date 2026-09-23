@@ -239,12 +239,23 @@ class AudioEffects extends ChangeNotifier {
     final curve = activeCurve;
     final loudDb = _presetId == 'custom' ? 0.0 : preset.loudness;
 
-    try {
-      for (final band in _bands) {
-        final g = _gainForBand(band.index, _bands.length, curve)
+    // 先把每个频段的目标增益算好,避免循环里逐个 set 时中途异常,
+    // 留下「部分频段已设成负增益、EQ 仍启用」的半成品 → 声音被压小。
+    final targets = <double>[
+      for (final band in _bands)
+        _gainForBand(band.index, _bands.length, curve)
             .clamp(_deviceMinDb, _deviceMaxDb)
-            .toDouble();
-        await band.setGain(g);
+            .toDouble(),
+    ];
+
+    try {
+      // 先关掉效果再调参数:这样即使后面任何一步抛异常,
+      // EQ / 响度都停在「已关闭」,不会把播放声音压小。
+      await eq.setEnabled(false);
+      await loud.setEnabled(false);
+
+      for (var i = 0; i < _bands.length; i++) {
+        await _bands[i].setGain(targets[i]);
       }
       await eq.setEnabled(wantOn);
       await loud.setTargetGain(wantOn ? loudDb : 0);
@@ -252,8 +263,13 @@ class AudioEffects extends ChangeNotifier {
       _status = '';
     } catch (e) {
       // 面板上会展示这句话,所以只给用户看得懂的文案(细节去日志里找)
-      _status = '音效应用失败:${friendlyError(e, fallback: '请重试或换其它音效')}';
+      _status = '音效应用失败:${friendlyError(e, fallback: '已自动关闭音效,声音恢复正常')}';
       debugPrint('[audio] apply effect failed: $e');
+      // 兜底:确保 EQ / 响度已关闭,声音回到正常音量
+      try {
+        await eq.setEnabled(false);
+        await loud.setEnabled(false);
+      } catch (_) {}
     }
     notifyListeners();
   }
