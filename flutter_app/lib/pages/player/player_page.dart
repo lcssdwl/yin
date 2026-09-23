@@ -853,11 +853,13 @@ class _PlayerPageState extends State<PlayerPage> {
   IconData _modeIcon(PlayMode mode) {
     switch (mode) {
       case PlayMode.sequence:
-        return Icons.repeat;
+        return Icons.double_arrow; // 顺序播放:两个箭头(→→),播完最后一首停下
+      case PlayMode.listLoop:
+        return Icons.repeat; // 列表循环:播完最后一首自动回到第一首
       case PlayMode.single:
-        return Icons.repeat_one;
+        return Icons.repeat_one; // 单曲循环
       case PlayMode.shuffle:
-        return Icons.shuffle;
+        return Icons.shuffle; // 随机播放
     }
   }
 

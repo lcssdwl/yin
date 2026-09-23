@@ -1070,6 +1070,9 @@ class PlayerProvider extends ChangeNotifier {
   void switchMode() {
     switch (_mode) {
       case PlayMode.sequence:
+        _mode = PlayMode.listLoop;
+        break;
+      case PlayMode.listLoop:
         _mode = PlayMode.single;
         break;
       case PlayMode.single:

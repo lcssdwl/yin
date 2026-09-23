@@ -37,8 +37,11 @@ class AppConstants {
 
 /// 播放模式
 enum PlayMode {
-  /// 顺序播放
+  /// 顺序播放(播完最后一首停下)
   sequence,
+
+  /// 列表循环(播完最后一首自动回到第一首)
+  listLoop,
 
   /// 单曲循环
   single,
@@ -52,6 +55,8 @@ extension PlayModeExt on PlayMode {
     switch (this) {
       case PlayMode.sequence:
         return '顺序播放';
+      case PlayMode.listLoop:
+        return '列表循环';
       case PlayMode.single:
         return '单曲循环';
       case PlayMode.shuffle:
