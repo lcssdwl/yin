@@ -146,7 +146,10 @@ class _PlayerPageState extends State<PlayerPage> {
   // ==================== 背景 ====================
 
   Widget _buildBackground(Song song, {required bool isDark}) {
-    final cover = song.cover.trim();
+    // 用 coverUrl(空封面自动兜底成默认图)而不是原始 cover:
+    // 原来直接用 cover,某几首歌的封面是坏图 / 服务端返回的灰色占位图时,
+    // 会被放大模糊成一大块灰色 —— 而转盘因为有兜底看不出来,就成了「背景灰、唱片正常」。
+    final cover = song.coverUrl.trim();
     final hasCover = cover.isNotEmpty;
 
     return Stack(
@@ -176,18 +179,28 @@ class _PlayerPageState extends State<PlayerPage> {
         //    切歌 / 拖动进度条时不会每帧重新光栅化,避免低端机上闪黑。
         if (hasCover)
           RepaintBoundary(
+            // 切歌时换 key:强制重建这一层,避免复用上一首的模糊图层
+            key: ValueKey('bg-${song.id}'),
             child: ImageFiltered(
               imageFilter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
               child: Image(
                 image: CachedNetworkImageProvider(cover),
                 fit: BoxFit.cover,
-                // 封面加载失败 → 只画底层渐变,并把失败原因写进运行日志
+                // 新封面解码完成前先保留上一张,避免切歌瞬间出现空帧/灰块
+                gaplessPlayback: true,
+                // 封面加载失败 → 先退到默认封面;默认封面也失败才只画底层渐变
                 errorBuilder: (_, __, error) {
                   if (_loggedCoverError != cover) {
                     _loggedCoverError = cover;
                     AppLog.add('[player] 封面加载失败 #${song.id}');
                   }
-                  return const SizedBox.shrink();
+                  return Image(
+                    image: const CachedNetworkImageProvider(
+                      AppConstants.defaultCover,
+                    ),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  );
                 },
               ),
             ),
