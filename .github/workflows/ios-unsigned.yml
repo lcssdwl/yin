@@ -79,7 +79,7 @@ jobs:
             未签名 ipa,用 Sideloadly / AltStore 借自己的 Apple ID 自签后安装(免费账号 7 天有效)。
 
             固定直链(永久有效,每次运行覆盖更新):
-            https://github.com/LCS6-SDWL/yin/releases/download/ios-latest/YunYunMusic-unsigned.ipa
+            https://github.com/lcssdwl/yin/releases/download/ios-latest/YunYunMusic-unsigned.ipa
           files: flutter_app/build/ios/iphoneos/YunYunMusic-unsigned.ipa
           # 找不到文件直接报错,别静默产出空发布
           fail_on_unmatched_files: true

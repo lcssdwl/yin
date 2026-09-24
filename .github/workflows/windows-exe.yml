@@ -91,7 +91,7 @@ jobs:
             版本 ${{ env.APP_FULL }}
 
             固定直链(永久有效,每次运行覆盖更新):
-            https://github.com/LCS6-SDWL/yin/releases/download/windows-latest/YunYunMusic-win64.zip
+            https://github.com/lcssdwl/yin/releases/download/windows-latest/YunYunMusic-win64.zip
 
             解压后双击 music_app.exe 即可运行;接口地址在打包时已写入。
           # 路径从仓库根目录写起(action 不受 working-directory 影响)

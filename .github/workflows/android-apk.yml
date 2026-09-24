@@ -100,7 +100,7 @@ jobs:
             版本 ${{ env.APP_FULL }}
 
             固定直链(永久有效,每次运行覆盖更新):
-            https://github.com/LCS6-SDWL/yin/releases/download/android-latest/YunYunMusic-arm64.apk
+            https://github.com/lcssdwl/yin/releases/download/android-latest/YunYunMusic-arm64.apk
 
             装之前注意:CI 的调试签名与本机不同,覆盖安装若提示「应用未安装」,先卸载旧版;
             或在仓库 secret 里配置 DEBUG_KEYSTORE_BASE64 让两边签名一致。
