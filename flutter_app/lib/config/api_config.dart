@@ -1,98 +1,44 @@
-import 'dart:io';
-
-import 'package:flutter/services.dart';
+import '../core/storage/storage_service.dart';
 
 /// 后端接口配置
 ///
-/// # baseUrl 怎么改(按平台,从 url.txt 读取,见 [ApiConfig.loadBaseUrl])
+/// # baseUrl 怎么改
 ///
-/// 优先级(高 → 低):
-///   1. 平台 url.txt(Android/iOS 资源 / Windows 本地文件)—— 服务器地址的唯一权威来源
-///   2. 编译期 dart-define 覆盖(仅当 url.txt 缺失/为空时兜底,主要用于 CI)
-///   3. 兜底默认地址 [_defaultBaseUrl]
+/// 地址完全可运行时配置,不再依赖 url.txt 文件:
+///  - 首次启动会进入「设置服务器地址」页引导填写(默认填开发者示例地址)
+///  - 「我的设置 → 服务器地址」可随时再次修改
 ///
-/// ───────────────────────────────────────────────────────────
-/// 【Android】打包固化,改的是资源文件,需要重新编译 APK
-///   位置: flutter_app/assets/url.txt
-///   步骤: 编辑该文件 → flutter build apk(或 flutter run)
-///   说明: 内容会打进 APK 的 assets,装到手机后不可再改,换地址必须重编。
-/// ───────────────────────────────────────────────────────────
-/// 【Windows】放外面,改的是 exe 同目录的文件,**不用重编**
-///   位置(二选一,等价):
-///     - 开发构建: build\windows\x64\runner\Release\url.txt
-///     - 发布目录: 云韵音乐-vX.X.X-win64\url.txt(和 music_app.exe 放一起)
-///   步骤: 用记事本打开 url.txt,改完保存,重启 App 即生效。
-///   说明: 外网隧道(devtunnel / cloudflared 等)换地址时,直接改这个文件最省事。
-/// ───────────────────────────────────────────────────────────
-/// 【开发联调】临时指定,优先级最高,会跳过上面的 url.txt
-///   flutter run --dart-define=API_BASE_URL=https://xxxx.devtunnels.ms
-///   flutter build apk --dart-define=API_BASE_URL=https://xxxx.devtunnels.ms
-/// ───────────────────────────────────────────────────────────
-/// 【url.txt 文件格式】
-///   - 只有一行: 纯后端地址,例如 http://192.168.1.10:8000 或 https://xxx.devtunnels.ms
-///   - 不要写注释、不要加引号、前后空格会被自动 trim 掉
-///   - 文件缺失 / 内容为空 / 读取失败 → 自动退回 [_defaultBaseUrl]
-/// ───────────────────────────────────────────────────────────
+/// 取值规则:有本地保存的地址就用它,否则用开发者示例地址 [developerExampleUrl]。
 class ApiConfig {
   ApiConfig._();
 
-  /// 编译期 dart-define 覆盖(优先级最高,开发期联调用)
-  static const String _envBaseUrl =
-      String.fromEnvironment('API_BASE_URL', defaultValue: '');
-
-  /// 兜底默认后端地址(局域网 / 本机)
-  static const String _defaultBaseUrl = 'http://10.126.126.10:8000';
+  /// 开发者示例后端地址(首次启动默认填入,可在「我的设置」里修改)
+  static const String developerExampleUrl = 'http://120.55.41.66:8000';
 
   /// 运行时实际生效的后端地址,由 [loadBaseUrl] 在启动时填充。
-  /// 不再是编译期常量:Android 读 assets/url.txt,Windows 读本地 url.txt。
-  static String baseUrl = _defaultBaseUrl;
+  static String baseUrl = developerExampleUrl;
 
   static const String apiPrefix = '/api/v1';
 
-  /// 启动时按平台加载后端地址,**必须在 DioClient.init() 之前调用**。
-  ///
-  ///  - Android / iOS: 读 assets/url.txt(已用 pubspec 的 assets 注册,打包固化)
-  ///  - Windows: 读 exe 同目录的 url.txt,方便外网隧道换地址时直接改文件、无需重打包
-  ///  - 其它平台 / 文件缺失 / 读取异常 → 退回 _defaultBaseUrl
+  /// 启动时加载后端地址,**必须在 DioClient.init() 之前调用**。
   static Future<void> loadBaseUrl() async {
-    // 1) 平台 url.txt 为最高优先级:服务器地址一律由它决定
-    String? fromFile;
-    if (Platform.isAndroid || Platform.isIOS) {
-      try {
-        fromFile = (await rootBundle.loadString('assets/url.txt')).trim();
-      } catch (e) {
-        print('[api] 读取 assets/url.txt 失败: $e');
-      }
-    } else if (Platform.isWindows) {
-      try {
-        final dir = File(Platform.resolvedExecutable).parent.path;
-        final file = File('$dir${Platform.pathSeparator}url.txt');
-        if (await file.exists()) {
-          fromFile = (await file.readAsString()).trim();
-        } else {
-          print('[api] 未找到 url.txt(将尝试 dart-define/默认值): $dir');
-        }
-      } catch (e) {
-        print('[api] 读取本地 url.txt 失败: $e');
-      }
-    }
-
-    if (fromFile != null && fromFile.isNotEmpty) {
-      baseUrl = fromFile;
-      print('[api] baseUrl 来自 url.txt: $baseUrl');
+    // 本地持久化地址(用户在「设置地址」页填写)优先
+    final saved = StorageService.baseUrl;
+    if (saved != null && saved.isNotEmpty) {
+      baseUrl = saved;
+      print('[api] baseUrl 来自本地存储: $baseUrl');
       return;
     }
 
-    // 2) 兜底:编译期 dart-define(仅当 url.txt 缺失/为空时用,主要用于 CI / 临时联调)
-    if (_envBaseUrl.isNotEmpty) {
-      baseUrl = _envBaseUrl;
-      print('[api] baseUrl 来自 dart-define: $baseUrl');
-      return;
-    }
+    // 兜底:开发者示例地址
+    baseUrl = developerExampleUrl;
+    print('[api] baseUrl 使用示例地址: $baseUrl');
+  }
 
-    // 3) 最终兜底:默认地址
-    baseUrl = _defaultBaseUrl;
-    print('[api] baseUrl 使用默认值: $baseUrl');
+  /// 是否已由用户配置过后端地址(用于首次启动引导判断)
+  static bool get isConfigured {
+    final saved = StorageService.baseUrl;
+    return saved != null && saved.isNotEmpty;
   }
 
   static const Duration connectTimeout = Duration(seconds: 15);

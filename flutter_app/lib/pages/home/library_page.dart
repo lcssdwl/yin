@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
+import '../../config/api_config.dart';
 import '../../config/constants.dart';
 import '../../config/theme.dart';
 import '../../core/audio/audio_cache.dart';
@@ -29,6 +30,7 @@ import '../playlist/playlist_detail_page.dart';
 import '../profile/about_page.dart';
 import '../profile/change_password_page.dart';
 import '../profile/log_page.dart';
+import '../setup/setup_address_page.dart';
 
 /// 「我的」页
 ///
@@ -209,6 +211,16 @@ class LibraryPageState extends State<LibraryPage> {
             title: '播放缓存',
             subtitle: _cacheText,
             onTap: () => _showCacheDialog(context),
+          ),
+
+          // 服务器地址(首次引导 / 设置可改)
+          _buildTile(
+            context,
+            icon: Icons.dns_outlined,
+            iconColor: AppTheme.paletteAt(0),
+            title: '服务器地址',
+            subtitle: ApiConfig.baseUrl,
+            onTap: () => _openSetupAddress(context),
           ),
 
           // 主题
@@ -1136,6 +1148,16 @@ class LibraryPageState extends State<LibraryPage> {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const ChangePasswordPage()),
     );
+  }
+
+  /// 服务器地址设置(从「我的设置」进入,保存后返回并刷新显示)
+  Future<void> _openSetupAddress(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const SetupAddressPage(fromSettings: true),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   // ==================== 设置 ====================

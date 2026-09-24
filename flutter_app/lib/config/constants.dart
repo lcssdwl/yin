@@ -16,6 +16,9 @@ class AppConstants {
   static const String keyThemeMode = 'theme_mode';
   static const String keyQuality = 'play_quality';
 
+  /// 用户配置的后端服务器地址(可运行时修改,首次启动引导填写)
+  static const String keyBaseUrl = 'base_url';
+
   /// 音效预设 id('off' = 原声/关闭)
   static const String keyAudioEffect = 'audio_effect';
 

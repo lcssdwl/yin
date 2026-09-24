@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../config/api_config.dart';
 import '../../config/theme.dart';
 import '../home/home_shell.dart';
+import '../setup/setup_address_page.dart';
 
 /// 启动页
 /// 注意:无论是否登录都直接进入首页(免登录原则)
@@ -22,8 +24,11 @@ class _SplashPageState extends State<SplashPage> {
   Future<void> _navigate() async {
     await Future.delayed(const Duration(milliseconds: 1200));
     if (!mounted) return;
+    final next = ApiConfig.isConfigured
+        ? const HomeShell()
+        : const SetupAddressPage();
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const HomeShell()),
+      MaterialPageRoute(builder: (_) => next),
     );
   }
 

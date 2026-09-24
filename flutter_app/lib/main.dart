@@ -43,7 +43,7 @@ Future<void> main() async {
     print('BOOT: storage failed');
   }
 
-  // 网络层:先按平台加载后端地址(url.txt),再初始化 dio
+  // 网络层:先加载后端地址(本地存储 / dart-define,首次启动走引导页),再初始化 dio
   await ApiConfig.loadBaseUrl();
   DioClient.instance.init();
   print('BOOT: dio ok');

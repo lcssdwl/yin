@@ -75,6 +75,15 @@ class StorageService {
 
   static bool get isLoggedIn => (token ?? '').isNotEmpty;
 
+  // ==================== 后端服务器地址(可运行时修改) ====================
+
+  /// 用户配置的后端地址;未配置过返回 null(用于首次启动引导判断)
+  static String? get baseUrl =>
+      _settings.get(AppConstants.keyBaseUrl) as String?;
+
+  static Future<void> setBaseUrl(String url) =>
+      _settings.put(AppConstants.keyBaseUrl, url);
+
   // ==================== 主题 / 音质 ====================
 
   static String get themeMode =>

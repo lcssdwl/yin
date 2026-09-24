@@ -61,6 +61,15 @@ class DioClient {
     );
   }
 
+  /// 运行时修改后端地址:更新内存、持久化,并同步 Dio 的 baseUrl。
+  /// 由「设置地址」页调用(首次引导 / 我的设置均可)。
+  Future<void> setBaseUrl(String url) async {
+    final trimmed = url.trim();
+    dio.options.baseUrl = trimmed;
+    ApiConfig.baseUrl = trimmed;
+    await StorageService.setBaseUrl(trimmed);
+  }
+
   Future<dynamic> get(
     String path, {
     Map<String, dynamic>? query,
