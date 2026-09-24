@@ -42,27 +42,11 @@ jobs:
           "APP_VER=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "版本号 $ver (完整 $full)"
 
-      - name: 确定接口地址
-        # 仓库 Variables 里建 API_BASE_URL 可覆盖;桌面版本机测试常用 http://127.0.0.1:8000
-        shell: pwsh
-        run: |
-          $url = "${{ vars.API_BASE_URL }}"
-          if ([string]::IsNullOrWhiteSpace($url)) {
-            $url = "https://nvh7g6dz-8000.asse.devtunnels.ms"
-          }
-          "API_BASE_URL=$url" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "版本 $env:APP_VER / 接口地址 $url"
-
       - name: 装依赖
         run: flutter pub get
 
-      - name: 编译 Windows 桌面版并写入 url.txt
-        run: |
-          flutter build windows --release
-          $url = "$env:API_BASE_URL"
-          if ([string]::IsNullOrWhiteSpace($url)) { $url = "https://nvh7g6dz-8000.asse.devtunnels.ms" }
-          [System.IO.File]::WriteAllText("build\windows\x64\runner\Release\url.txt", $url)
-          Write-Host "接口地址已写入 url.txt : $url"
+      - name: 编译 Windows 桌面版
+        run: flutter build windows --release
 
       - name: 打包成 zip(exe + dll + data)
         shell: pwsh
@@ -93,7 +77,7 @@ jobs:
             固定直链(永久有效,每次运行覆盖更新):
             https://github.com/lcssdwl/yin/releases/download/windows-latest/YunYunMusic-win64.zip
 
-            解压后双击 music_app.exe 即可运行;接口地址在打包时已写入。
+            解压后双击 music_app.exe 即可运行;首次启动按引导填写服务器地址(之后在「我的 → 设置 → 服务器地址」可随时改)。
           # 路径从仓库根目录写起(action 不受 working-directory 影响)
           files: flutter_app/YunYunMusic-win64.zip
           fail_on_unmatched_files: true

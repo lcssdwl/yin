@@ -30,18 +30,6 @@ jobs:
           channel: stable
           cache: true
 
-      - name: 确定接口地址并写入 url.txt
-        # 仓库 Settings → Secrets and variables → Actions → Variables
-        # 新建 API_BASE_URL 可覆盖(devtunnel 换地址时改那里,不用改代码)
-        # 地址写入 assets/url.txt(打包进 ipa),不再用 dart-define
-        run: |
-          URL="${{ vars.API_BASE_URL }}"
-          if [ -z "$URL" ]; then
-            URL="https://nvh7g6dz-8000.asse.devtunnels.ms"
-          fi
-          printf '%s' "$URL" > assets/url.txt
-          echo "本次打包使用的接口地址:$URL (已写入 assets/url.txt)"
-
       - name: 装依赖
         run: flutter pub get
 

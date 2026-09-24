@@ -11,9 +11,8 @@
 #   YunYunMusic-v1.0.84-84-win64.zip
 #   YunYunMusic-unsigned.ipa
 #
-# 换服务器地址:仓库 Settings → Secrets and variables → Actions → Variables
-#   新建 API_BASE_URL = https://xxx(devtunnel 换域名时改这里,不用改代码)
-#   不配置时默认用 https://nvh7g6dz-8000.asse.devtunnels.ms
+# 换服务器地址:不用改仓库、也不用重新打包,在 App 内改即可
+#   首次启动引导页填写,或「我的 → 设置 → 服务器地址」随时改,重启 App 生效
 #
 # 触发方式:**只手动**(故意没加自动触发,免得每次 push 都消耗额度)
 #   Actions → 左侧选工作流 → 右上 Run workflow

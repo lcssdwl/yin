@@ -56,9 +56,8 @@
 # 想自动续签可装 AltStore(Windows 版 AltServer 常驻,同一 WiFi 下自动续签)。
 
 # ========== 5) 换接口地址(devtunnel 换域名时)==========
-# 仓库 Settings → Secrets and variables → Actions → Variables
-#   新建 API_BASE_URL = https://xxxx.devtunnels.ms
-# 之后重新跑一次工作流即可,不用改代码、不用重新打包本地安卓包。
+# 地址在 App 内配置,不用改仓库、不用重新打包:
+#   首次启动引导页填写,或「我的 → 设置 → 服务器地址」改完重启 App 即可。
 
 # ========== 6) 已知差异(iOS)==========
 #  - 没有音效(均衡器):那是安卓系统能力,iOS 下面板会显示「当前设备不支持」

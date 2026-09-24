@@ -44,18 +44,6 @@ jobs:
           echo "APP_VER=$VER" >> "$GITHUB_ENV"
           echo "版本号:$VER (完整 $FULL)"
 
-      - name: 确定接口地址并写入 url.txt
-        # 仓库 Settings → Secrets and variables → Actions → Variables
-        # 新建 API_BASE_URL 可覆盖(换服务器时改那里,不用改代码)
-        # 地址写入 assets/url.txt(打包进 APK),不再用 dart-define
-        run: |
-          URL="${{ vars.API_BASE_URL }}"
-          if [ -z "$URL" ]; then
-            URL="https://nvh7g6dz-8000.asse.devtunnels.ms"
-          fi
-          printf '%s' "$URL" > assets/url.txt
-          echo "版本 $APP_VER / 接口地址 $URL (已写入 assets/url.txt)"
-
       - name: 写入本机调试签名(仅当配置了 secret)
         if: ${{ env.KS_B64 != '' }}
         run: |
