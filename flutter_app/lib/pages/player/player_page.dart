@@ -1,5 +1,7 @@
 import 'dart:ui';
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
@@ -95,6 +97,10 @@ class _PlayerPageState extends State<PlayerPage> {
     }
 
     return Scaffold(
+      // 深色兜底:背景层本来就会铺满整屏,这里再垫一层同色系深色。
+      // 万一某一帧背景模糊层没画出来(光栅缓存被挤掉 / 合成未完成),
+      // 露出的是深色,而不是主题的浅灰(0xFFF7F4FF)—— 就不会闪出灰色大块。
+      backgroundColor: const Color(0xFF120E1C),
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -362,29 +368,37 @@ class _PlayerPageState extends State<PlayerPage> {
 
         for (int i = start; i <= end; i++) {
           final isCurrent = i == index;
-          final text = Text(
-            lines[i].text,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: isCurrent ? Colors.white : Colors.white38,
-              fontSize: isCurrent ? 19 : 14,
-              fontWeight: isCurrent ? FontWeight.w700 : FontWeight.normal,
-              height: 1.5,
-            ),
-          );
+
+          // 当前行用主题渐变着色(紫→粉→橙)。
+          //
+          // 注意:这里**不用 ShaderMask**。ShaderMask 会 push 一个 saveLayer
+          // (离屏缓冲),歌词快时每来一次进度就开一次,GPU 压力大,
+          // 背景那层大模糊的栅格缓存会被挤掉 —— 表现为闪出灰色大块。
+          // 用 Paint.shader 直接给文字上渐变,视觉效果一样但没有 saveLayer。
+          final style = isCurrent
+              ? TextStyle(
+                  foreground: Paint()
+                    ..shader = AppTheme.primaryGradient.createShader(
+                      const Rect.fromLTWH(0, 0, 280, 26),
+                    ),
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  height: 1.5,
+                )
+              : const TextStyle(
+                  color: Colors.white38,
+                  fontSize: 14,
+                  height: 1.5,
+                );
 
           rows.add(
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 7),
-              // 当前行用主题渐变着色(紫→粉→橙),唱到哪一行就亮成彩色
-              child: isCurrent
-                  ? ShaderMask(
-                      shaderCallback: (bounds) =>
-                          AppTheme.primaryGradient.createShader(bounds),
-                      blendMode: BlendMode.srcIn,
-                      child: text,
-                    )
-                  : text,
+              child: Text(
+                lines[i].text,
+                textAlign: TextAlign.center,
+                style: style,
+              ),
             ),
           );
         }
@@ -403,38 +417,25 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   /// 转盘视图下的一行当前歌词(随播放进度滚动到当前行)
+  ///
+  /// 关键改动:改成独立的 StatefulWidget 自己订阅进度流,
+  /// **只有当前行索引真的变了才 setState**。
+  /// 原来是 StreamBuilder 包这一行 —— 进度流来一次就重建一次子树,
+  /// 歌词快的歌一秒好几次,连带整页重建、背景模糊层反复失效。
   Widget _buildCurrentLyricLine(PlayerProvider player) {
     final lines = player.lyricLines;
     if (lines.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    return StreamBuilder<Duration>(
-      stream: player.positionStream,
-      initialData: Duration.zero,
-      builder: (context, snapshot) {
-        final position = snapshot.data ?? Duration.zero;
-        final index = LyricsParser.indexAt(lines, position);
-        final text = lines[index].text;
-
-        return GestureDetector(
-          onTap: () => setState(() => _showLyrics = true),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(
-              text,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 14,
-                height: 1.4,
-              ),
-            ),
-          ),
-        );
-      },
+    return SizedBox(
+      // 固定高度:这一行出现/消失时不要让唱片上下跳位
+      height: 22,
+      child: _CurrentLyricLine(
+        lines: lines,
+        player: player,
+        onTap: () => setState(() => _showLyrics = true),
+      ),
     );
   }
 
@@ -1183,6 +1184,89 @@ class _PlayerPageState extends State<PlayerPage> {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return h > 0 ? '$h:$m:$s' : '$m:$s';
+  }
+}
+
+/// 单行当前歌词:自己订阅进度流,**只在索引变化时重建**
+///
+/// 原来这一段是 StreamBuilder,进度流每来一次就重建整棵子树。
+/// 快的歌一秒好几次重建,整页重排 + 背景模糊层反复失效,就会闪出灰色大块。
+class _CurrentLyricLine extends StatefulWidget {
+  const _CurrentLyricLine({
+    required this.lines,
+    required this.player,
+    required this.onTap,
+  });
+
+  final List<LyricLine> lines;
+  final PlayerProvider player;
+  final VoidCallback onTap;
+
+  @override
+  State<_CurrentLyricLine> createState() => _CurrentLyricLineState();
+}
+
+class _CurrentLyricLineState extends State<_CurrentLyricLine> {
+  StreamSubscription<Duration>? _sub;
+
+  /// 当前行索引(-1 = 还没到第一句)
+  int _index = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    _listen();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CurrentLyricLine old) {
+    super.didUpdateWidget(old);
+    // 换歌 / 歌词重新解析:重置并重新订阅
+    if (old.lines != widget.lines) {
+      setState(() => _index = -1);
+      _listen();
+    }
+  }
+
+  void _listen() {
+    _sub?.cancel();
+    _sub = widget.player.positionStream.listen((position) {
+      if (!mounted || widget.lines.isEmpty) return;
+      final index = LyricsParser.indexAt(widget.lines, position);
+      // 只有真的换了一行才重建,进度变了但还在同一行 → 不动
+      if (index != _index) setState(() => _index = index);
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = widget.lines;
+    if (lines.isEmpty || _index < 0) return const SizedBox.shrink();
+
+    final text = lines[_index.clamp(0, lines.length - 1)].text;
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+      ),
+    );
   }
 }
 
