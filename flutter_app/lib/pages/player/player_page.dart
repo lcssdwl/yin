@@ -1,8 +1,7 @@
-import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/constants.dart';
@@ -46,6 +45,9 @@ class _PlayerPageState extends State<PlayerPage> {
 
   /// 已写过「打开播放器」日志的歌曲(避免每帧重复写)
   int? _loggedSongId;
+
+  /// 已记录过的封面加载失败(同一张图只记一次,避免刷屏)
+  String? _loggedCoverError;
 
   @override
   Widget build(BuildContext context) {
@@ -176,7 +178,33 @@ class _PlayerPageState extends State<PlayerPage> {
         //    外面套 RepaintBoundary:大半径模糊开销很大,隔离成独立图层后
         //    切歌 / 拖动进度条时不会每帧重新光栅化,避免低端机上闪黑。
         if (hasCover)
-          _BlurredCoverBackground(coverUrl: cover, songId: song.id),
+          RepaintBoundary(
+            // 切歌时换 key:强制重建这一层,避免复用上一首的模糊图层
+            key: ValueKey('bg-${song.id}'),
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+              child: Image(
+                image: CachedNetworkImageProvider(cover),
+                fit: BoxFit.cover,
+                // 新封面解码完成前先保留上一张,避免切歌瞬间出现空帧/灰块
+                gaplessPlayback: true,
+                // 封面加载失败 → 先退到默认封面;默认封面也失败才只画底层渐变
+                errorBuilder: (_, __, error) {
+                  if (_loggedCoverError != cover) {
+                    _loggedCoverError = cover;
+                    AppLog.add('[player] 封面加载失败 #${song.id}');
+                  }
+                  return Image(
+                    image: const CachedNetworkImageProvider(
+                      AppConstants.defaultCover,
+                    ),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  );
+                },
+              ),
+            ),
+          ),
 
         // 3) 遮罩:浅色模式(白色模式)下把黑色遮罩调浅,封面色彩透出来,不再黑乎乎;
         //    深色模式保持较重的遮罩压住背景,保证白字可读。
@@ -1326,107 +1354,6 @@ class _QueueSheetState extends State<_QueueSheet> {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// 模糊封面背景层。
-///
-/// 不再直接用 CachedNetworkImageProvider —— 它是边下载边解码的:
-/// 图片只下到一半时会先把已解码的上半截画出来,未下载到的行
-/// 被解码器填成灰色,再被 26σ 模糊放大成整屏灰块
-/// (「上半彩色、下半灰色、过一会自己恢复」的截图就是这个)。
-///
-/// 现在改为:先用缓存管理器把封面**完整落盘**,拿到完整文件后才
-/// 用 FileImage 渲染。下载期间继续显示上一张成功封面(gapless),
-/// 没有上一张时只显示兜底渐变。彻底避免半截/灰块帧。
-class _BlurredCoverBackground extends StatefulWidget {
-  const _BlurredCoverBackground({required this.coverUrl, required this.songId});
-
-  final String coverUrl;
-  final int songId;
-
-  @override
-  State<_BlurredCoverBackground> createState() =>
-      _BlurredCoverBackgroundState();
-}
-
-class _BlurredCoverBackgroundState extends State<_BlurredCoverBackground> {
-  /// 当前主封面的完整下载任务(url 不变时复用,避免每秒 rebuild 重新下载)
-  Future<File>? _future;
-
-  /// 主封面失败后的默认封面下载任务(同样缓存,失败也只请求一次)
-  Future<File>? _fallbackFuture;
-
-  /// 最近一次成功渲染的封面图层(新封面下载期间继续显示,gapless)
-  Widget? _lastImage;
-
-  /// 已记录过加载失败的 url(同一张图只记一次日志)
-  String? _loggedError;
-
-  @override
-  void initState() {
-    super.initState();
-    _start();
-  }
-
-  @override
-  void didUpdateWidget(covariant _BlurredCoverBackground old) {
-    super.didUpdateWidget(old);
-    // 切歌(封面 url 变了)才重新下载,页面每秒 rebuild 不动
-    if (old.coverUrl != widget.coverUrl) _start();
-  }
-
-  void _start() {
-    _future = DefaultCacheManager().getSingleFile(widget.coverUrl);
-  }
-
-  /// 统一拼「模糊 + 铺满」图层
-  Widget _layer(ImageProvider image) {
-    return RepaintBoundary(
-      // 切歌时换 key:强制重建图层,避免复用上一首的模糊光栅
-      key: ValueKey('bg-${widget.songId}'),
-      child: ImageFiltered(
-        imageFilter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
-        child: Image(image: image, fit: BoxFit.cover, gaplessPlayback: true),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<File>(
-      future: _future,
-      builder: (context, snap) {
-        if (snap.hasData) {
-          _lastImage = _layer(FileImage(snap.data!));
-          return _lastImage!;
-        }
-
-        // 主封面加载失败 → 退到默认封面(同样完整下载后再画);
-        // 默认封面也失败就只画兜底渐变
-        if (snap.hasError) {
-          if (_loggedError != widget.coverUrl) {
-            _loggedError = widget.coverUrl;
-            AppLog.add('[player] 封面加载失败 #${widget.songId}');
-          }
-          _fallbackFuture ??=
-              DefaultCacheManager().getSingleFile(AppConstants.defaultCover);
-          return FutureBuilder<File>(
-            future: _fallbackFuture,
-            builder: (context, fallback) {
-              if (fallback.hasData) {
-                _lastImage = _layer(FileImage(fallback.data!));
-                return _lastImage!;
-              }
-              return const SizedBox.shrink();
-            },
-          );
-        }
-
-        // 还在下载:继续显示上一张成功封面(有的话),否则透出兜底渐变
-        return _lastImage ?? const SizedBox.shrink();
-      },
     );
   }
 }
