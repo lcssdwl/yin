@@ -34,6 +34,12 @@ class AppConstants {
   static const String defaultCover =
       'https://picsum.photos/seed/default/400/400';
 
+  /// 发行版页面:用户在这里下载 / 更新安装包(关于页入口,用系统浏览器打开)
+  static const String releasesUrl = 'https://github.com/lcssdwl/yin/releases';
+
+  /// 项目主页(关于页入口,用系统浏览器打开)
+  static const String homepageUrl = 'https://lcssdwl.github.io/';
+
   /// 列表分页大小
   static const int pageSize = 20;
 }

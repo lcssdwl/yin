@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../config/constants.dart';
 import '../../config/theme.dart';
 
 /// 关于 App
@@ -106,6 +108,27 @@ class _AboutPageState extends State<AboutPage> {
 
           _card(
             context,
+            title: '相关链接',
+            child: Column(
+              children: [
+                _LinkRow(
+                  icon: Icons.system_update_alt_rounded,
+                  title: '下载 / 更新',
+                  subtitle: 'Releases 里的安装包',
+                  onTap: () => _openLink(AppConstants.releasesUrl),
+                ),
+                _LinkRow(
+                  icon: Icons.language_rounded,
+                  title: '项目主页',
+                  subtitle: 'lcssdwl.github.io',
+                  onTap: () => _openLink(AppConstants.homepageUrl),
+                ),
+              ],
+            ),
+          ),
+
+          _card(
+            context,
             title: '说明',
             child: Text(
               '本应用仅供学习交流使用,不含任何商业内容。',
@@ -128,6 +151,27 @@ class _AboutPageState extends State<AboutPage> {
         ],
       ),
     );
+  }
+
+  /// 用**系统浏览器**打开外链(不是应用内 WebView,用户能用上浏览器的
+  /// 下载、书签等能力;Releases 页在应用内直接下载 APK 反而容易失败)
+  Future<void> _openLink(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      _toast('链接无效:$url');
+      return;
+    }
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && mounted) _toast('无法打开链接:$url');
+    } catch (e) {
+      _toast('打开链接失败:$e');
+    }
+  }
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Widget _card(
@@ -154,6 +198,61 @@ class _AboutPageState extends State<AboutPage> {
           const SizedBox(height: 12),
           child,
         ],
+      ),
+    );
+  }
+}
+
+/// 可点击的外链行(图标 + 标题 + 说明 + 打开箭头)
+class _LinkRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _LinkRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 18, color: theme.colorScheme.primary),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 13)),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 11, color: theme.hintColor),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.open_in_new, size: 16, color: theme.hintColor),
+          ],
+        ),
       ),
     );
   }
