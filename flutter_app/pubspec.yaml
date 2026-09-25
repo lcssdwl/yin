@@ -26,6 +26,8 @@ dependencies:
 
   # 图片缓存
   cached_network_image: ^3.3.1
+  # 封面完整落盘后再渲染(播放页背景,避免渐进式解码出现灰色半截)
+  flutter_cache_manager: ^3.3.1
 
   # 本地存储(游客数据 / Token)
   shared_preferences: ^2.2.3
