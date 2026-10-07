@@ -29,6 +29,14 @@ class Song {
   /// 为空表示后端没有该音源的指纹(多为远程外链),此时跳过校验。
   final String md5;
 
+  /// 已经**完整缓存到本地**的音质档位(离线列表专用,空 = 没有离线缓存)
+  ///
+  /// 非空表示这首歌的这份音频已经下载完整,断网也能播。
+  /// 播放时直接按这一档去找本地缓存,不再受「当前设置的音质」影响 ——
+  /// 否则设置里选的是无损、离线列表点了只有 320 缓存的那首,
+  /// 查缓存会落空并跑去联网,离线就放不出来。
+  final String offlineQuality;
+
   /// 各音质各自的 MD5(列表 / 详情接口下发)
   final String md5128;
   final String md5320;
@@ -57,6 +65,7 @@ class Song {
     this.md5128 = '',
     this.md5320 = '',
     this.md5Flac = '',
+    this.offlineQuality = '',
   });
 
   factory Song.fromJson(Map<String, dynamic> json) {
@@ -200,6 +209,7 @@ class Song {
     String? lyric,
     String? url,
     String? md5,
+    String? offlineQuality,
   }) {
     return Song(
       id: id,
@@ -227,6 +237,9 @@ class Song {
       md5128: md5128,
       md5320: md5320,
       md5Flac: md5Flac,
+      // 同理:「这首歌有哪一档的完整缓存」也要一起带上,
+      // 否则解析播放地址时会丢掉这个标记,离线列表点了歌却跑去联网。
+      offlineQuality: offlineQuality ?? this.offlineQuality,
     );
   }
 

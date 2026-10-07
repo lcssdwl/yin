@@ -11,6 +11,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../data/models/song.dart';
 import '../log/app_log.dart';
 import '../storage/storage_service.dart';
 
@@ -281,8 +282,9 @@ class AudioCache {
   static Future<bool> save(
     String md5,
     String quality,
-    String url,
-  ) async {
+    String url, {
+    Song? song,
+  }) async {
     if (md5.isEmpty) {
       // 没有指纹就没有可靠的键,宁可不缓存
       AppLog.add('[cache] skip $quality:后端未下发音频指纹,不缓存(用 ID 会串歌)');
@@ -302,6 +304,11 @@ class AudioCache {
       // 已有缓存就不重复下载
       if (await target.exists() && await target.length() > _headerMinLen) {
         AppLog.add('[cache] $tag 已有缓存,跳过');
+        // 也要补登记:索引是本版本才加的,老缓存没有身份信息,
+        // 补上之后这首歌才会出现在「离线缓存」列表里。
+        if (song != null) {
+          await _recordSong(song, md5, quality, await target.length());
+        }
         return true;
       }
 
@@ -346,6 +353,13 @@ class AudioCache {
 
       lastError = '';
       _setProgress('');
+
+      // 记进索引:「离线缓存」列表按它展示歌名/歌手/封面,
+      // 断网时才有东西可列、可播(见 [cachedSongs])。
+      if (song != null) {
+        await _recordSong(song, md5, quality, await target.length());
+      }
+
       _notifyChanged();
       await _trimIfNeeded();
       return true;
@@ -378,6 +392,7 @@ class AudioCache {
     String md5,
     String quality,
     String url,
+    {Song? song}
   ) async {
     // 没有指纹就不排队:没有可靠的键,缓存下来也认不出是谁
     if (md5.isEmpty || url.isEmpty) return;
@@ -392,7 +407,7 @@ class AudioCache {
       _queue.removeAt(0);
     }
 
-    _queue.add(_CacheTask(md5, quality, url));
+    _queue.add(_CacheTask(md5, quality, url, song));
     _setProgress(_queueLabel());
     unawaited(_pump());
   }
@@ -414,7 +429,7 @@ class AudioCache {
         try {
           // 单首最多给 3 分钟:超时/异常都只放弃这一首,
           // 否则一首卡死就会拖住整个队列(表现就是"失败后再也不缓存了")
-          await save(task.md5, task.quality, task.url)
+          await save(task.md5, task.quality, task.url, song: task.song)
               .timeout(const Duration(minutes: 3));
         } catch (e) {
           AppLog.add('[cache] ${_tag(task.md5, task.quality)} 任务异常,继续下一首: $e');
@@ -560,6 +575,142 @@ class AudioCache {
     }
   }
 
+  // ==================== 离线索引 ====================
+
+  /// 索引文件名(存在缓存根目录下)
+  static const String _indexName = 'index.json';
+
+  static Future<File> _indexFile() async {
+    final d = await _rootDir();
+    return File('${d.path}${Platform.pathSeparator}$_indexName');
+  }
+
+  /// 读索引。key 一律用「$md5|$quality」
+  static Future<Map<String, AudioCacheEntry>> _readIndex() async {
+    try {
+      final f = await _indexFile();
+      if (!await f.exists()) return <String, AudioCacheEntry>{};
+
+      final txt = await f.readAsString();
+      if (txt.trim().isEmpty) return <String, AudioCacheEntry>{};
+
+      final decoded = jsonDecode(txt);
+      if (decoded is! Map) return <String, AudioCacheEntry>{};
+
+      final out = <String, AudioCacheEntry>{};
+      decoded.forEach((k, v) {
+        if (v is Map) {
+          out[k.toString()] = AudioCacheEntry.fromJson(
+            Map<String, dynamic>.from(v),
+          );
+        }
+      });
+      return out;
+    } catch (_) {
+      // 索引坏了就当没有:最坏结果是列表为空,不影响播放
+      return <String, AudioCacheEntry>{};
+    }
+  }
+
+  static Future<void> _writeIndex(Map<String, AudioCacheEntry> map) async {
+    try {
+      final f = await _indexFile();
+      final data = <String, dynamic>{
+        for (final e in map.entries) e.key: e.value.toJson(),
+      };
+      await f.writeAsString(jsonEncode(data), flush: true);
+    } catch (e) {
+      AppLog.add('[cache] 索引写入失败: $e');
+    }
+  }
+
+  /// 缓存成功后,把这首歌的「身份信息」记进索引
+  ///
+  /// 缓存文件名只有「音频指纹 + 音质」,既没歌名也没歌手 ——
+  /// 断网时不联网根本查不出是谁。离线列表要能列出歌名,就得趁有网有数据时先存下来。
+  static Future<void> _recordSong(
+    Song song,
+    String md5,
+    String quality,
+    int bytes,
+  ) async {
+    if (song.id <= 0) return;
+
+    final index = await _readIndex();
+
+    // 顺手丢掉「加密文件已经不在」的条目(超过空间上限被自动删了 / 用户手动删过),
+    // 免得列表里出现点了播不了的幽灵条目。
+    final alive = <String, AudioCacheEntry>{};
+    for (final e in index.entries) {
+      final p = await _encPath(e.value.md5, e.value.quality);
+      if (File(p).existsSync()) alive[e.key] = e.value;
+    }
+
+    alive['$md5|$quality'] = AudioCacheEntry(
+      songId: song.id,
+      name: song.name,
+      singerName: song.singerName,
+      albumName: song.albumName,
+      cover: song.cover,
+      duration: song.duration,
+      md5: md5,
+      quality: quality,
+      bytes: bytes,
+      cachedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+
+    await _writeIndex(alive);
+  }
+
+  /// 全部可离线播放的歌曲(离线列表的数据源)
+  ///
+  /// 只返回「索引里有身份信息」且「加密文件还在」的条目。
+  /// 老版本缓存下来的文件没有身份信息,它们照样能命中缓存秒播,
+  /// 只是这里列不出来 —— 重听一次(播放即会补登记)就会出现在列表里。
+  ///
+  /// 按缓存时间倒序:最近缓存的在最上面。
+  static Future<List<AudioCacheEntry>> cachedSongs() async {
+    final index = await _readIndex();
+    if (index.isEmpty) return <AudioCacheEntry>[];
+
+    final out = <AudioCacheEntry>[];
+    for (final e in index.values) {
+      final p = await _encPath(e.md5, e.quality);
+      if (File(p).existsSync()) out.add(e);
+    }
+
+    out.sort((a, b) => b.cachedAt.compareTo(a.cachedAt));
+    return out;
+  }
+
+  /// 只补登记索引(不下载)
+  ///
+  /// 命中本地缓存时也可以调一次:本版本的索引是后加的,老缓存只有 .enc 文件、
+  /// 没有身份信息,播一次补一下,它就会出现在「离线缓存」列表里。
+  static Future<void> remember(Song song, String md5, String quality) async {
+    if (song.id <= 0 || md5.isEmpty) return;
+
+    try {
+      final f = File(await _encPath(md5, quality));
+      if (!f.existsSync()) return;
+      await _recordSong(song, md5, quality, await f.length());
+    } catch (_) {}
+  }
+
+  /// 删掉某一首的缓存(加密文件 + 索引条目)
+  static Future<void> removeEntry(String md5, String quality) async {
+    try {
+      final f = File(await _encPath(md5, quality));
+      if (await f.exists()) await f.delete();
+    } catch (_) {}
+
+    final index = await _readIndex();
+    if (index.remove('$md5|$quality') != null) {
+      await _writeIndex(index);
+    }
+    _notifyChanged();
+  }
+
   /// 清理播放用的临时明文文件(App 启动时调用)
   ///
   /// 加密缓存保留,只是把上次运行残留的明文清掉 ——
@@ -685,7 +836,92 @@ class _CacheTask {
   final String quality;
   final String url;
 
-  const _CacheTask(this.md5, this.quality, this.url);
+  /// 触发这次缓存的歌(用来把歌名 / 歌手 / 封面写进离线索引)
+  final Song? song;
+
+  const _CacheTask(this.md5, this.quality, this.url, this.song);
+}
+
+/// 离线索引里的一条记录
+///
+/// 缓存文件名是「音频指纹_音质.enc」,里面既没有歌名也没有歌手 ——
+/// 断网时不联网就列不出个歌单。播放成功补完歌曲信息后单独存一份**明文** JSON,
+/// 「离线缓存」页全靠它渲染。
+///
+/// 只放展示用的元数据(不像音频那样加密):里面没有任何音频数据,
+/// 也不含可用于取流的签名地址。
+class AudioCacheEntry {
+  final int songId;
+  final String name;
+  final String singerName;
+  final String albumName;
+  final String cover;
+  final int duration;
+
+  /// 音频指纹(同时也是缓存文件名的一部分)
+  final String md5;
+
+  /// 已缓存的音质档位(128 / 320 / flac)
+  final String quality;
+
+  /// 加密文件大小(字节)
+  final int bytes;
+
+  /// 缓存时间(毫秒时间戳,用于排序「最近缓存」)
+  final int cachedAt;
+
+  const AudioCacheEntry({
+    required this.songId,
+    required this.name,
+    required this.singerName,
+    required this.albumName,
+    required this.cover,
+    required this.duration,
+    required this.md5,
+    required this.quality,
+    required this.bytes,
+    required this.cachedAt,
+  });
+
+  factory AudioCacheEntry.fromJson(Map<String, dynamic> json) {
+    return AudioCacheEntry(
+      songId: (json['song_id'] as num?)?.toInt() ?? 0,
+      name: (json['name'] as String?) ?? '',
+      singerName: (json['singer_name'] as String?) ?? '',
+      albumName: (json['album_name'] as String?) ?? '',
+      cover: (json['cover'] as String?) ?? '',
+      duration: (json['duration'] as num?)?.toInt() ?? 0,
+      md5: (json['md5'] as String?) ?? '',
+      quality: (json['quality'] as String?) ?? '320',
+      bytes: (json['bytes'] as num?)?.toInt() ?? 0,
+      cachedAt: (json['cached_at'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'song_id': songId,
+        'name': name,
+        'singer_name': singerName,
+        'album_name': albumName,
+        'cover': cover,
+        'duration': duration,
+        'md5': md5,
+        'quality': quality,
+        'bytes': bytes,
+        'cached_at': cachedAt,
+      };
+
+  /// 歌名丢了(极端情况:当年写入时接口就没下发)时至少有个占位
+  String get displayName => name.isEmpty ? '未知歌曲 #$songId' : name;
+
+  String get displaySubtitle {
+    if (singerName.isNotEmpty && albumName.isNotEmpty) {
+      return '$singerName · $albumName';
+    }
+    return singerName.isNotEmpty
+        ? singerName
+        : (albumName.isNotEmpty ? albumName : '未知歌手');
+  }
 }
 
 /// 后台 isolate:算文件 MD5(边读边算,不整包进内存)

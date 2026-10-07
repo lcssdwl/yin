@@ -25,6 +25,7 @@ import '../../widgets/center_toast.dart';
 import '../../widgets/gradient_icon_tile.dart';
 import '../common/song_list_page.dart';
 import '../login/login_page.dart';
+import '../offline/offline_cache_page.dart';
 import '../playlist/my_playlists_page.dart';
 import '../playlist/playlist_detail_page.dart';
 import '../profile/about_page.dart';
@@ -203,14 +204,22 @@ class LibraryPageState extends State<LibraryPage> {
             onTap: () => _openHistory(context),
           ),
 
-          // 播放缓存(边播边存,二次播放秒开)
+          // 离线缓存(边播边存,二次播放秒开;断网也能播)
           _buildTile(
             context,
-            icon: Icons.cleaning_services_outlined,
+            icon: Icons.download_for_offline_outlined,
             iconColor: AppTheme.paletteAt(2),
-            title: '播放缓存',
+            title: '离线缓存',
             subtitle: _cacheText,
-            onTap: () => _showCacheDialog(context),
+            onTap: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const OfflineCachePage(),
+                ),
+              );
+              // 页面里可能清过缓存,回来重算统计
+              if (mounted) await _loadCacheStat();
+            },
           ),
 
           // 服务器地址(首次引导 / 设置可改)
@@ -1073,75 +1082,8 @@ class LibraryPageState extends State<LibraryPage> {
     return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(2)} GB';
   }
 
-  /// 缓存管理(查看占用 / 清空)
-  Future<void> _showCacheDialog(BuildContext context) async {
-    final theme = Theme.of(context);
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          '播放缓存',
-          style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('已缓存 $_cacheCount 首,占用 ${_fmtSize(_cacheBytes)}'),
-            const SizedBox(height: 10),
-            Text(
-              '播放过的歌曲会自动存到本地,下次播放无需下载 —— 省流量、秒开。\n'
-              '缓存超过 1.5GB 时会自动清理最久未播放的。',
-              style: TextStyle(
-                fontSize: 12,
-                color: theme.hintColor,
-                height: 1.6,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('关闭'),
-          ),
-          if (_cacheCount > 0)
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text(
-                '清空缓存',
-                style: TextStyle(color: Colors.redAccent),
-              ),
-            ),
-        ],
-      ),
-    );
-
-    if (ok != true) return;
-
-    // 保护当前正在播放的歌的明文文件:清缓存若删掉它,正在播的歌会中断。
-    // 只保护本地文件(网络流播的不在 tmp 里,无需保护)。
-    final player = context.read<PlayerProvider>();
-    final curUrl = player.currentSong?.playUrl ?? '';
-    String? protect;
-    if (curUrl.isNotEmpty && !curUrl.startsWith('http')) {
-      protect = curUrl.startsWith('file://')
-          ? Uri.parse(curUrl).toFilePath()
-          : curUrl;
-    }
-
-    await AudioCache.clear(protectPath: protect);
-    if (!mounted) return;
-
-    await _loadCacheStat();
-    if (!context.mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('播放缓存已清空')),
-    );
-  }
+  // 「清空缓存」已移到 OfflineCachePage(点「离线缓存」进去才有清空的必要),
+  // 这里只保留统计展示。
 
   /// 修改密码(跳转独立页面)
   Future<void> _openChangePassword(BuildContext context) async {

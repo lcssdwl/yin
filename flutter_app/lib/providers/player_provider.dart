@@ -570,6 +570,10 @@ class PlayerProvider extends ChangeNotifier {
           debugPrint('[player] 用本地缓存 #${song.id} md5=${_shortMd5(key.key)} 音质=${key.value}');
           AppLog.add('[player] 用本地缓存 #${song.id} '
               '指纹=${_shortMd5(key.key)} 音质=${key.value}');
+
+          // 顺手把它记进离线索引:这条分支是「已经有缓存」,不会再去走 prefetch,
+          // 不在这里补登记的话,老缓存里的歌永远进不了「离线缓存」列表。
+          unawaited(AudioCache.remember(song, key.key, key.value));
           if (!stale()) {
             // 缓存文件名里的档位就是这份音频真实档位(可能是兜底后的档位)
             _actualQuality = key.value;
@@ -773,7 +777,12 @@ class PlayerProvider extends ChangeNotifier {
   ///
   /// 返回 null 表示后端还没算出指纹:这时既不查缓存也不写缓存,直接走网络。
   MapEntry<String, String>? _cacheKeyOf(Song song) {
-    final q = song.effectiveQuality(_quality);
+    // 离线列表点进来的歌已知「有哪一档的完整缓存」:直接按那一档查,
+    // 不再受当前音质设置影响 —— 否则设置选无损、这首只有 320 缓存时,
+    // 查缓存会落空并跑去联网,断网就彻底放不出来。
+    final q = song.offlineQuality.isNotEmpty
+        ? song.offlineQuality
+        : song.effectiveQuality(_quality);
 
     // 1) 首选「该档位文件自己的指纹」(列表 / 详情接口下发的 md5_128/320/flac)
     final own = song.md5OfQualityField(q);
@@ -820,7 +829,14 @@ class PlayerProvider extends ChangeNotifier {
     // 下载地址必须和缓存键(音质)严格对应:用 urlForQuality 取该音质专用地址,
     // 不能用 playUrl(它优先返回 song.url / url320,可能和 key.value 不是同一档,
     // 导致「下的是 320、却用 md5Flac 校验」→ MD5 永远不符)。
-    unawaited(AudioCache.prefetch(key.key, key.value, song.urlForQuality(key.value)));
+    unawaited(
+      AudioCache.prefetch(
+        key.key,
+        key.value,
+        song.urlForQuality(key.value),
+        song: song, // 顺带把歌名 / 歌手 / 封面记进离线索引
+      ),
+    );
   }
 
   /// 联网取播放地址;失败退回原地址(不阻塞,由上层决定能否播)
